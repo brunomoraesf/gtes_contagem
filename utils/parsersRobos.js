@@ -1,21 +1,45 @@
 // utils/parsersRobos.js
 // Parsers para os robôs 2-6.
 
+// utils/parsersRobos.js
+
 function formatarData(valor) {
   if (!valor) return '';
   const s = String(valor).trim();
-  if (/^\d{8}$/.test(s)) {
-    const ano = parseInt(s.slice(0, 4));
-    if (ano >= 1900 && ano <= 2100) {
-      return `${s.slice(6, 8)}${s.slice(4, 6)}${s.slice(0, 4)}`; // aaaammdd -> ddmmaaaa
-    }
-    // Se não for aaaammdd, assume que já é ddmmaaaa
-    return s;
-  }
-  // Se está no formato dd/mm/aaaa, remove as barras
+  
+  // Se já está no formato dd/mm/aaaa, tira as barras
   if (/^\d{2}\/\d{2}\/\d{4}$/.test(s)) {
     return s.replace(/\//g, '');
   }
+
+  if (/^\d{8}$/.test(s)) {
+    // Função auxiliar para validar se a data realmente existe no calendário
+    // (evita casos como 31/04 ou 29/02 em ano não bissexto)
+    const isValidDate = (y, m, d) => {
+      if (y < 1900 || y > 2100) return false;
+      const date = new Date(y, m - 1, d);
+      return date.getFullYear() === y && date.getMonth() === m - 1 && date.getDate() === d;
+    };
+
+    // 1. Tenta interpretar como DDMMAAAA (Padrão do SIGRH)
+    const d1 = parseInt(s.slice(0, 2), 10);
+    const m1 = parseInt(s.slice(2, 4), 10);
+    const y1 = parseInt(s.slice(4, 8), 10);
+    
+    if (isValidDate(y1, m1, d1)) {
+      return s; // Retorna no formato ddmmaaaa (ex: "20041995")
+    }
+
+    // 2. Se não for DDMMAAAA, tenta YYYYMMDD (Invertido)
+    const y2 = parseInt(s.slice(0, 4), 10);
+    const m2 = parseInt(s.slice(4, 6), 10);
+    const d2 = parseInt(s.slice(6, 8), 10);
+
+    if (isValidDate(y2, m2, d2)) {
+      return `${s.slice(6, 8)}${s.slice(4, 6)}${s.slice(0, 4)}`; // Retorna ddmmaaaa
+    }
+  }
+  
   return s;
 }
 

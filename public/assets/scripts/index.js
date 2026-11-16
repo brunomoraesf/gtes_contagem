@@ -2,7 +2,7 @@
 function parseDataBR(s) {
     if (!s || typeof s !== 'string') return null;
     const str = s.trim();
-    if (str === '99999999' || str === '99/99/9999') return new Date(); // Trata como hoje
+    if (str === '99999999' || str === '99/99/9999') return new Date();
     let m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(str);
     if (m) return new Date(Number(m[3]), Number(m[2]) - 1, Number(m[1]));
     m = /^(\d{2})(\d{2})(\d{4})$/.exec(str);
@@ -16,11 +16,8 @@ function diasInclusivos(dataIni, dataFim) {
     const a = parseDataBR(dataIni);
     const b = parseDataBR(dataFim);
     if (!a || !b) return null;
-
-    // Zera horas/minutos para evitar o erro do Horário de Verão
     const aZero = new Date(a.getFullYear(), a.getMonth(), a.getDate());
     const bZero = new Date(b.getFullYear(), b.getMonth(), b.getDate());
-
     const ms = bZero - aZero;
     if (ms < 0) return 0;
     return Math.round(ms / 86400000) + 1;
@@ -202,7 +199,9 @@ function atualizarCardElegibilidade(result) {
                 <div>
                     <p style="margin: 4px 0; font-size: 0.95rem;"><strong>Idade:</strong> ${result.idade} anos</p>
                     <p style="margin: 4px 0; font-size: 0.95rem;"><strong>Tempo de Contribuição:</strong> ${result.tempoContribuicaoDias} dias (${result.tempoContribuicaoAMD.texto})</p>
+                    ${result.tempoMagisterioDias > 0 ? `
                     <p style="margin: 4px 0; font-size: 0.95rem;"><strong>Tempo Especial (Magistério):</strong> ${result.tempoMagisterioDias} dias (${result.tempoMagisterioAMD.texto})</p>
+                    ` : ''}
                     <p style="margin: 4px 0; font-size: 0.95rem; color: #2563eb;"><strong>Previsão de Elegibilidade:</strong> ${result.dataElegibilidade || '---'}</p>
                 </div>
                 <div style="background: #fff; border-radius: 8px; padding: 10px; border: 1px solid #e2e8f0;">
@@ -220,14 +219,12 @@ function atualizarCardElegibilidade(result) {
 async function gerarDocumento() {
     if (!dadosFicha || !calculosGlobais) return;
 
-    // SUBSTITUI O 99/99/9999 PELA DATA ATUAL NO JSON
     if (dadosFicha.lotacoes) {
         const hoje = new Date();
         const d = String(hoje.getDate()).padStart(2, '0');
         const m = String(hoje.getMonth() + 1).padStart(2, '0');
         const y = hoje.getFullYear();
         const hojeFmt = `${d}${m}${y}`;
-
         dadosFicha.lotacoes.forEach(l => {
             if (l.fim_escala === '99999999' || l.fim_escala === '99/99/9999') {
                 l.fim_escala = hojeFmt;
@@ -278,7 +275,8 @@ function renderizarFicha() {
     const rev = dadosFicha.reversao_aposentadoria || [];
     const lot = dadosFicha.lotacoes || [];
 
-    const isProfessor = /PROFESSOR|MAGIST|DOCENTE/i.test(d.cargo || '') || (Array.isArray(lot) && lot.some(l => /PROFESSOR|MAGIST|DOCENTE/i.test(l.cargo || '')));
+    // Regex sem acentos, com MAGISTERIO e PROF. (apenas uma declaração!)
+    const isProfessor = /PROFESSOR|MAGIST|MAGISTERIO|DOCENTE|PROF\./i.test(d.cargo || '') || (Array.isArray(lot) && lot.some(l => /PROFESSOR|MAGIST|MAGISTERIO|DOCENTE|PROF\./i.test(l.cargo || '')));
 
     const completo = dadosFicha.completo === true;
     const arquivoJson = `servidor-${dadosFicha.matricula}.json`;
@@ -317,41 +315,30 @@ function renderizarFicha() {
         html += '</tr></thead><tbody>';
 
         dados.forEach((linha, idx) => {
-            // 👇 AQUI ESTÁ A CORREÇÃO: Pega o índice original do JSON, senão usa o index da tela
             const originalIdx = linha.__idxOriginal !== undefined ? linha.__idxOriginal : idx;
-            
+
             html += '<tr>';
-            
+
             if (duploCheck) {
-                // 1. Checkbox normal (Averbado): Sempre marcado e travado
                 html += `<td class="col-fixa-esq-1"><input type="checkbox" class="linha-check-inc" data-tipo="averbado" data-idx="${originalIdx}" checked disabled></td>`;
-                
-                // 2. Checkbox de Magistério
+
                 const cod = String(linha.codigo_averbacao || '').trim();
                 const codigosMagisterio = ['02', '10', '20', '52', '104'];
                 const isMagCode = codigosMagisterio.includes(cod);
-                
+
                 let magChecked = '';
                 if (isProfessor && isMagCode) {
-                    magChecked = 'checked'; // Só marca se for professor e o código for válido
+                    magChecked = 'checked';
                 }
-
                 html += `<td class="col-fixa-esq-2"><input type="checkbox" class="linha-check-inc" data-tipo="magisterio" data-idx="${originalIdx}" ${magChecked} disabled></td>`;
             } else {
-                // 3. Outras tabelas (exc, afa, rev, lot)
-                let chkAttr = 'checked'; // Por padrão, todos vêm marcados
-                
-                // Regra específica de Lotações (grupoId === 'lot')
+                let chkAttr = 'checked';
                 if (grupoId === 'lot') {
                     const ua = String(linha.unidade_administrativa || '').trim();
-                    // Lista de UAs que contam como escola (001 a 015)
-                    const validUAs = ['001','002','003','004','005','006','007','008','009','010','011','012','013','014','015'];
+                    const validUAs = ['001', '002', '003', '004', '005', '006', '007', '008', '009', '010', '011', '012', '013', '014', '015'];
                     const isValida = validUAs.includes(ua.padStart(3, '0'));
-                    
-                    chkAttr = isValida ? 'checked' : ''; // Marca se for válida, desmarca se for 099, etc.
+                    chkAttr = isValida ? 'checked' : '';
                 }
-
-                // Aplica a marcação (chkAttr) e trava para todos (disabled)
                 html += `<td class="col-fixa-esq-1"><input type="checkbox" class="linha-check" data-grupo="${grupoId}" data-idx="${originalIdx}" ${chkAttr} disabled></td>`;
             }
 
@@ -360,14 +347,12 @@ function renderizarFicha() {
                 if (c.key === 'matricula') {
                     val = fmtMat(val);
                 } else if (c.key === 'cod_sub_historico') {
-                    // 👇 ADICIONE ESTE BLOCO AQUI 👇
                     const cod = String(val || '').trim().padStart(3, '0');
                     const desc = window.DICIONARIO_AFASTAMENTOS ? (window.DICIONARIO_AFASTAMENTOS[cod] || 'AFASTAMENTO') : 'AFASTAMENTO';
                     val = `${cod} - ${desc}`;
-                    // 👆 ----------------------- 👆
                 } else if (c.key === '__dias') {
                     if (c.keyDias && linha[c.keyDias]) {
-                        val = linha[c.keyDias]; // Prioriza o valor do SIGRH (ex: afastamentos)
+                        val = linha[c.keyDias];
                     } else {
                         val = camposData ? (diasInclusivos(linha[camposData.ini], linha[camposData.fim]) ?? '-----') : '-----';
                     }
@@ -548,11 +533,13 @@ function renderizarFicha() {
             <div class="grupo-total" id="total-rev" style="${estiloLinhaTotal}"><span>Marcadas: <strong>0/0</strong></span><span>Total: <strong>${soma(rev, l => Number(l.dias_aposentado) || diasInclusivos(l.data_inicio_aposentadoria, l.data_termino_aposentadoria))}</strong> dias</span></div>
         </div>
 
+        ${isProfessor ? `
         <div class="ficha-secao">
             <h3>Lotações</h3>
             ${renderTabela(lotOrdenado, colunasLot, { vaziaMsg: 'Nenhum registro encontrado.', grupoId: 'lot', camposData: { ini: 'inicio_escala', fim: 'fim_escala' } })}
             <div class="grupo-total" id="total-lot" style="${estiloLinhaTotal}"><span>Marcadas: <strong>0/0</strong></span><span>Total: <strong>${soma(lot, l => diasInclusivos(l.inicio_escala, l.fim_escala))}</strong> dias</span></div>
         </div>
+        ` : ''}
 
         <div class="ficha-acoes">
             ${completo ? `<a href="/relatorios/servidor/${arquivoJson}" target="_blank" class="btn-acao">🗂️ Ver JSON</a>` : `<button class="btn-acao" disabled title="Disponível quando todos os robôs concluírem">🔒 JSON bloqueado</button>`}
@@ -579,7 +566,6 @@ function verJSON() {
 
 document.getElementById('btnVerJSON').addEventListener('click', verJSON);
 
-// ===== CONTROLE DOS ROBÔS =====
 const ROBOS_META = {
     robo1: { nome: 'Cadastro', pasta: 'cadastro', prefixo: 'cadastro' },
     robo2: { nome: 'Inc. Averbações', pasta: 'inclui_averbacoes', prefixo: 'inc-averbacoes' },
@@ -1118,7 +1104,6 @@ function processarEvento(data) {
     }
 }
 
-// ===== MODAIS INFO =====
 function abrirModalInfo() { document.getElementById('modalInfoOverlay').style.display = 'flex'; }
 function fecharModalInfo() { document.getElementById('modalInfoOverlay').style.display = 'none'; }
 

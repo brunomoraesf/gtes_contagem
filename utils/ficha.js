@@ -1,30 +1,35 @@
-
 // utils/ficha.js
+
 function fmtDate(d) {
   if (!d) return null;
   const s = String(d).trim();
+  
   if (!/^\d{8}$/.test(s)) return null;
 
-  const dd = parseInt(s.slice(0, 2));
-  const mm = parseInt(s.slice(2, 4));
-  const yyyy1 = parseInt(s.slice(4, 8));
+  const isValidDate = (y, m, day) => {
+    if (y < 1900 || y > 2100) return false;
+    const date = new Date(y, m - 1, day);
+    return date.getFullYear() === y && date.getMonth() === m - 1 && date.getDate() === day;
+  };
 
-  const year2 = parseInt(s.slice(0, 4));
-  const mon2 = parseInt(s.slice(4, 6));
-  const day2 = parseInt(s.slice(6, 8));
+  // Tenta DDMMAAAA
+  const dd = parseInt(s.slice(0, 2), 10);
+  const mm = parseInt(s.slice(2, 4), 10);
+  const yyyy = parseInt(s.slice(4, 8), 10);
 
-  const validDDMM = dd >= 1 && dd <= 31 && mm >= 1 && mm <= 12 && yyyy1 >= 1900 && yyyy1 <= 2100;
-  const validYYYY = day2 >= 1 && day2 <= 31 && mon2 >= 1 && mon2 <= 12 && year2 >= 1900 && year2 <= 2100;
-
-  // Sempre retorna ddmmaaaa (sem barras)
-  if (validDDMM && !validYYYY) return s; // já é ddmmaaaa
-  if (!validDDMM && validYYYY) return `${s.slice(6, 8)}${s.slice(4, 6)}${s.slice(0, 4)}`; // aaaammdd -> ddmmaaaa
-  if (validDDMM && validYYYY) {
-    const cur = new Date().getFullYear();
-    const d1 = Math.abs(yyyy1 - cur);
-    const d2 = Math.abs(year2 - cur);
-    return d1 <= d2 ? s : `${s.slice(6, 8)}${s.slice(4, 6)}${s.slice(0, 4)}`;
+  if (isValidDate(yyyy, mm, dd)) {
+    return s; // Já está ddmmaaaa
   }
+
+  // Tenta YYYYMMDD
+  const year2 = parseInt(s.slice(0, 4), 10);
+  const mon2 = parseInt(s.slice(4, 6), 10);
+  const day2 = parseInt(s.slice(6, 8), 10);
+
+  if (isValidDate(year2, mon2, day2)) {
+    return `${s.slice(6, 8)}${s.slice(4, 6)}${s.slice(0, 4)}`; // aaaammdd -> ddmmaaaa
+  }
+
   return null;
 }
 

@@ -37,7 +37,7 @@ const SUBPASTAS = {
   afastamentos: path.join(PASTA_RELATORIOS, 'afastamentos'),
   reversao_aposentadoria: path.join(PASTA_RELATORIOS, 'reversao_aposentadoria'),
   lotacoes: path.join(PASTA_RELATORIOS, 'lotacoes'),
-  descricao_lotacoes: path.join(PASTA_RELATORIOS, 'descricao_lotacoes')   // ← novo
+  descricao_lotacoes: path.join(PASTA_RELATORIOS, 'descricao_lotacoes')
 };
 
 Object.values(SUBPASTAS).forEach(p => { if (!fs.existsSync(p)) fs.mkdirSync(p, { recursive: true }); });
@@ -61,7 +61,6 @@ app.get('/relatorios/servidor/:arquivo', (req, res, next) => {
 
 function setCancel(v) { setCancelRequested(v); }
 
-// MAPEAMENTO DOS EXECUTORES REAIS
 const EXECUTORES = {
   robo1: async (orgao, matricula, senha, pesquisa, onProgress) =>
     executarRobo1(orgao, matricula, senha, pesquisa, null, onProgress, PASTA_RELATORIOS, SUBPASTAS),
@@ -82,6 +81,25 @@ async function executarUmRobo(robo, ctx, onProgress) {
   const exec = EXECUTORES[robo];
   if (!exec) throw new Error(`Sem executor para ${robo}`);
 
+  // PULO DO ROBO 6 SE FOR CARREIRA DE ASSISTENCIA
+  if (robo === 'robo6') {
+    const jsonAtual = lerJSON(SUBPASTAS.servidor, alvo);
+    const cargo = String(jsonAtual?.cadastro?.cargo || '').toUpperCase();
+    const isProfessor = /PROFESSOR|MAGIST|MAGISTERIO|DOCENTE|PROF\./i.test(cargo);
+
+    if (!isProfessor) {
+      onProgress(100, 'ℹ️ Cargo de assistência (sem lotações de magistério).');
+      const resultado = {
+        estado: 'vazio',
+        dados: [],
+        mensagem: 'Cargo não é de magistério. Lotações ignoradas.',
+        arquivo: null
+      };
+      const json = atualizarBloco(SUBPASTAS.servidor, alvo, 'robo6', resultado);
+      return { robo, ...resultado, json }; // Retorna o json atualizado
+    }
+  }
+
   let resultado;
   try {
     const r = await exec(orgao, matricula, senha, pesquisa, onProgress);
@@ -95,7 +113,6 @@ async function executarUmRobo(robo, ctx, onProgress) {
     resultado = { estado: 'erro', dados: null, mensagem: err.message, arquivo: null };
   }
 
-  // Atualiza o JSON unificado
   try {
     const json = atualizarBloco(SUBPASTAS.servidor, alvo, robo, {
       estado: resultado.estado,
@@ -111,7 +128,6 @@ async function executarUmRobo(robo, ctx, onProgress) {
 
 let executandoNoServidor = false;
 
-// ===== POST /executar (orquestrador) =====
 app.post('/executar', async (req, res) => {
   if (executandoNoServidor) {
     return res.status(429).json({ erro: 'Já existe uma execução em andamento no servidor.' });
@@ -130,7 +146,6 @@ app.post('/executar', async (req, res) => {
 
   const alvo = normalizarMatricula(pesquisa);
 
-  // LIMPEZA TOTAL: apaga JSON anterior e cria um novo zerado
   const caminhoJSONAlvo = caminhoJSON(SUBPASTAS.servidor, alvo);
   if (fs.existsSync(caminhoJSONAlvo)) {
     try { fs.unlinkSync(caminhoJSONAlvo); } catch (_) { }
@@ -200,7 +215,6 @@ app.post('/executar', async (req, res) => {
   }
 });
 
-// ===== POST /executar-robo (individual) =====
 app.post('/executar-robo', async (req, res) => {
   if (executandoNoServidor) {
     return res.status(429).json({ erro: 'Já existe uma execução em andamento no servidor.' });
@@ -213,7 +227,6 @@ app.post('/executar-robo', async (req, res) => {
 
   setCancel(false);
   await fecharTodosBrowsers();
-
   executandoNoServidor = true;
 
   const alvo = normalizarMatricula(pesquisa);
@@ -258,15 +271,12 @@ app.post('/executar-robo', async (req, res) => {
 app.post('/salvar-calculos', (req, res) => {
   const { matricula, calculos } = req.body;
   if (!matricula || !calculos) return res.status(400).json({ erro: 'Dados incompletos.' });
-  
   const alvo = normalizarMatricula(matricula);
   const caminho = caminhoJSON(SUBPASTAS.servidor, alvo);
-  
   if (!fs.existsSync(caminho)) return res.status(404).json({ erro: 'JSON base não encontrado.' });
-  
   try {
     const json = JSON.parse(fs.readFileSync(caminho, 'utf8'));
-    json.calculos = calculos; // Salva o bloco de cálculos no JSON original
+    json.calculos = calculos;
     json.atualizado_em = new Date().toISOString();
     fs.writeFileSync(caminho, JSON.stringify(json, null, 2), 'utf8');
     res.json({ sucesso: true });
@@ -275,23 +285,16 @@ app.post('/salvar-calculos', (req, res) => {
   }
 });
 
-
 app.post('/carregar', (req, res) => {
   const { matricula } = req.body || {};
   if (!matricula) return res.status(400).json({ erro: 'Matrícula não informada.' });
   const alvo = normalizarMatricula(matricula);
   const json = lerJSON(SUBPASTAS.servidor, alvo);
 
-  // Requisito 1: cadastro é obrigatório
   if (!json || !json.cadastro || !json.cadastro.nome) {
-    return res.json({
-      sucesso: false,
-      inexistente: true,
-      mensagem: 'Matrícula inexistente (sem relatório de cadastro).'
-    });
+    return res.json({ sucesso: false, inexistente: true, mensagem: 'Matrícula inexistente (sem relatório de cadastro).' });
   }
 
-  // Requisito 2/3: monta o status de cada relatório
   const RELATORIOS = {
     robo1: { nome: 'Cadastro', chave: 'cadastro', obrigatorio: true },
     robo2: { nome: 'Inc. Averbações', chave: 'inc_averbacoes', obrigatorio: false, lista: true },
@@ -307,8 +310,6 @@ app.post('/carregar', (req, res) => {
 
   for (const [robo, meta] of Object.entries(RELATORIOS)) {
     const bloco = json[meta.chave];
-
-    // Requisito 3: detecta campos faltando no bloco de cadastro (comparação com estrutura esperada)
     if (meta.obrigatorio) {
       const CAMPOS_CADASTRO = [
         'orgao', 'matricula', 'nome', 'sexo', 'cpf', 'data_nascimento', 'email',
@@ -321,16 +322,13 @@ app.post('/carregar', (req, res) => {
     }
 
     const stRobo = json.status_robos?.[robo] || 'pendente';
-    const existe = meta.lista
-      ? Array.isArray(bloco) && bloco.length > 0
-      : !!bloco;
+    const existe = meta.lista ? Array.isArray(bloco) && bloco.length > 0 : !!bloco;
 
     if (meta.obrigatorio) {
       status[robo] = { estado: 'ok', mensagem: 'Sucesso' };
     } else if (stRobo === 'ok' && existe) {
       status[robo] = { estado: 'ok', mensagem: 'Sucesso' };
     } else if (stRobo === 'vazio') {
-      // Trata o estado 'vazio' como um estado válido (sucesso sem dados)
       status[robo] = { estado: 'ok', mensagem: 'Sucesso (sem dados)' };
     } else {
       status[robo] = { estado: 'inexistente', mensagem: 'Relatório inexistente' };
@@ -342,9 +340,7 @@ app.post('/carregar', (req, res) => {
     sucesso: todosOk,
     temCampoFaltando,
     divergente: temCampoFaltando,
-    mensagem: temCampoFaltando
-      ? 'Há campos inexistentes no cadastro.'
-      : (todosOk ? 'Todos os relatórios carregados.' : 'Alguns relatórios inexistentes.'),
+    mensagem: temCampoFaltando ? 'Há campos inexistentes no cadastro.' : (todosOk ? 'Todos os relatórios carregados.' : 'Alguns relatórios inexistentes.'),
     json,
     status,
     exibivel: json.completo === true

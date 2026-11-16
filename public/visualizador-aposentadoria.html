@@ -144,7 +144,11 @@
             const mat = d.matricula || 'XXXXXXX';
             const nasc = formatarData(d.data_nascimento);
             const adm = formatarData(d.data_admissao);
-            const sexo = String(d.sexo).toUpperCase().includes('F') ? 'F' : 'M';
+            
+            // CORRIGIDO AQUI: Lê "1", "2", "M", "F", etc.
+            const rawSexo = String(d.sexo || '').trim().toUpperCase();
+            const sexo = (rawSexo === '2' || rawSexo === 'F' || rawSexo.includes('FEM')) ? 'F' : 'M';
+
             const status = d.status || 'XXXXXXXXXXXX';
             const cargo = d.cargo || 'XXXXXXXXXXXX';
             const ch = (parseInt(d.carga_horaria_principal) || 0) + (parseInt(d.carga_horaria_secundaria) || 0);
@@ -158,7 +162,6 @@
             const elegivel = regra.elegivel ? 'faz' : 'fará';
             const leg = regra.fundamentacao || 'XXXXXXXXXXXXXXXXXXXXX';
 
-            // USA A DATA CALCULADA DO JSON. SE NÃO EXISTIR (JSON ANTIGO), USA HOJE.
             const dataAprox = c.dataElegibilidade || new Date().toLocaleDateString('pt-BR');
 
             // --- AVERBAÇÕES UTILIZADAS ---
