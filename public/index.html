@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Automação para Ficha de Cadastro</title>
+  <link rel="stylesheet" href="assets/estilos/index.css">
+</head>
+
+<body>
+
+  <div class="container">
+    <h1>📋 Automação Tempo de Serviço</h1>
+    <p class="subtitle">Ficha de Cadastro</p>
+
+    <!-- Formulário -->
+    <div class="grid-3">
+      <div class="campo">
+        <label>Órgão</label>
+        <input type="text" id="orgao" value="652" disabled style="background:#e9ecef; cursor:default;">
+      </div>
+      <div class="campo">
+        <label>Matrícula (usuário)</label>
+        <input type="text" id="matricula" placeholder="Sua matrícula" value="">
+      </div>
+      <div class="campo">
+        <label>Senha</label>
+        <div class="senha-wrapper">
+          <input type="password" id="senha" placeholder="••••••••">
+          <button type="button" class="senha-toggle" id="senhaToggle">🙈</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="grid-2">
+      <div class="campo">
+        <label>Matrícula Alvo</label>
+        <input type="text" id="pesquisa" placeholder="Ex: 0069682X">
+      </div>
+    </div>
+
+    <div class="btn-group">
+      <button class="btn btn-primary" id="btnExecutar">▶ Executar Todos</button>
+      <button class="btn btn-danger" id="btnCancelar" disabled>✖ Cancelar</button>
+      <button class="btn btn-success" id="btnCarregar">📂 Carregar</button>
+      <button class="btn btn-secondary" id="btnLimpar">🗑️ Limpar</button>
+      <button class="btn btn-primary" id="btnVerJSON">🗂️ Ver JSON</button>
+    </div>
+
+    <!-- ===== CAIXA DOS ROBÔS ===== -->
+    <div class="robos-container" id="robosContainer">
+      <div class="robos-header">
+        <h3>🤖 Robôs</h3>
+      </div>
+      <div class="robos-grid" id="robosGrid">
+
+        <!-- Robô 1 -->
+        <div class="robo-card" data-robo="robo1">
+          <div class="robo-card-header">
+            <span class="robo-nome">Cadastro</span>
+            <span class="robo-badge">1</span>
+          </div>
+          <div class="robo-progress">
+            <div class="robo-progress-bar" id="robo1Bar" style="width:0%"></div>
+          </div>
+          <div class="robo-status" id="robo1Status">Aguardando...</div>
+          <div class="robo-arquivo" id="robo1Arquivo"></div>
+          <button class="robo-btn-exec" data-robo="robo1" id="btnExecRobo1">▶ Executar</button>
+        </div>
+
+        <!-- Robô 2 -->
+        <div class="robo-card" data-robo="robo2">
+          <div class="robo-card-header">
+            <span class="robo-nome">Inc. Averbações</span>
+            <span class="robo-badge">2</span>
+          </div>
+          <div class="robo-progress">
+            <div class="robo-progress-bar" id="robo2Bar" style="width:0%"></div>
+          </div>
+          <div class="robo-status" id="robo2Status">Aguardando...</div>
+          <div class="robo-arquivo" id="robo2Arquivo"></div>
+          <button class="robo-btn-exec" data-robo="robo2" id="btnExecRobo2">▶ Executar</button>
+        </div>
+
+        <!-- Robô 3 -->
+        <div class="robo-card" data-robo="robo3">
+          <div class="robo-card-header">
+            <span class="robo-nome">Exc. Averbações</span>
+            <span class="robo-badge">3</span>
+          </div>
+          <div class="robo-progress">
+            <div class="robo-progress-bar" id="robo3Bar" style="width:0%"></div>
+          </div>
+          <div class="robo-status" id="robo3Status">Aguardando...</div>
+          <div class="robo-arquivo" id="robo3Arquivo"></div>
+          <button class="robo-btn-exec" data-robo="robo3" id="btnExecRobo3">▶ Executar</button>
+        </div>
+
+        <!-- Robô 4 -->
+        <div class="robo-card" data-robo="robo4">
+          <div class="robo-card-header">
+            <span class="robo-nome">Afastamentos</span>
+            <span class="robo-badge">4</span>
+          </div>
+          <div class="robo-progress">
+            <div class="robo-progress-bar" id="robo4Bar" style="width:0%"></div>
+          </div>
+          <div class="robo-status" id="robo4Status">Aguardando...</div>
+          <div class="robo-arquivo" id="robo4Arquivo"></div>
+          <button class="robo-btn-exec" data-robo="robo4" id="btnExecRobo4">▶ Executar</button>
+        </div>
+
+        <!-- Robô 5 -->
+        <div class="robo-card" data-robo="robo5">
+          <div class="robo-card-header">
+            <span class="robo-nome">Rev. Aposentadoria</span>
+            <span class="robo-badge">5</span>
+          </div>
+          <div class="robo-progress">
+            <div class="robo-progress-bar" id="robo5Bar" style="width:0%"></div>
+          </div>
+          <div class="robo-status" id="robo5Status">Aguardando...</div>
+          <div class="robo-arquivo" id="robo5Arquivo"></div>
+          <button class="robo-btn-exec" data-robo="robo5" id="btnExecRobo5">▶ Executar</button>
+        </div>
+
+        <!-- Robô 6 -->
+        <div class="robo-card" data-robo="robo6">
+          <div class="robo-card-header">
+            <span class="robo-nome">Lotações</span>
+            <span class="robo-badge">6</span>
+          </div>
+          <div class="robo-progress">
+            <div class="robo-progress-bar" id="robo6Bar" style="width:0%"></div>
+          </div>
+          <div class="robo-status" id="robo6Status">Aguardando...</div>
+          <div class="robo-arquivo" id="robo6Arquivo"></div>
+          <button class="robo-btn-exec" data-robo="robo6" id="btnExecRobo6">▶ Executar</button>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- Progresso geral -->
+    <div class="progress-geral" id="progressGeral">
+      <div class="bar" id="progressGeralBar" style="width:0%"></div>
+      <div class="label" id="progressGeralLabel">0%</div>
+    </div>
+
+    <!-- Log -->
+    <div class="log-area" id="logArea">
+      <div class="log-entry"><span class="time">[Sistema]</span><span class="msg cinza">Aguardando início...</span>
+      </div>
+    </div>
+
+    <!-- Formulário de dados -->
+    <div class="form-dados" id="formDados">
+      <h2>📝 Dados</h2>
+      <div class="placeholder">Formulário que será preenchido com os dados.</div>
+    </div>
+  </div>
+
+  <footer>
+    <a href="https://bmfolio.web.app/" target="_blank">© <span class="ano-atual">2026</span> Bruno Moraes</a>
+  </footer>
+
+  <!-- Modal de Erro -->
+  <div class="modal-overlay" id="modalErro">
+    <div class="modal-box">
+      <h2 id="modalTitulo">Aviso</h2>
+      <p id="modalMensagem">Mensagem</p>
+      <button class="btn btn-primary" id="modalBtnFechar">OK</button>
+    </div>
+  </div>
+
+  <div class="floating-btn-top" id="topBtn" onclick="window.scrollTo({top:0,behavior:'smooth'})" title="Voltar ao topo">
+    ↑</div>
+  <div class="floating-btn-manual" id="manualBtn" onclick="abrirVisualizadorVazio()" title="Abrir visualizador">✏️</div>
+  <div class="floating-btn-info" id="infoBtn" onclick="abrirModalInfo()">i</div>
+
+  <!-- Modal de Informações -->
+  <div class="modal-overlay" id="modalInfoOverlay" onclick="if(event.target===this) fecharModalInfo()">
+    <div class="modal-winxp">
+      <div class="modal-title">
+        <span>Informações</span>
+        <div class="window-controls">
+          <button onclick="return false;">─</button>
+          <button onclick="return false;">□</button>
+          <button onclick="fecharModalInfo()">✕</button>
+        </div>
+      </div>
+      <div class="modal-content info-content">
+        <p style="font-size: 14px; text-align: left;">
+          <strong>Desenvolvido em 2026 por:</strong><br><br>
+          <strong>Bruno Moraes</strong> – Matr. 214.563-4<br>
+          <a href="https://github.com/ProfMaiane/" target="_blank" style="color: #1a73e8;">GitHub</a><br><br>
+          <strong>Maiane Neres</strong> – Matr. 2001.924-6<br>
+          <a href="https://github.com/brunomoraesdigital" target="_blank" style="color: #1a73e8;">GitHub</a><br><br>
+          E a toda a equipe GECAF<br><br>
+        </p>
+        <p style="text-align: left; font-size: 13px;">
+          <strong>Como as informações são armazenadas?</strong><br>
+          Todos os dados inseridos permanecem apenas <br>no seu navegador.<br>
+          Nenhuma informação é enviada a servidores <br>externos.<br>
+        </p>
+        <button onclick="fecharModalInfo()"
+          style="background:#d4d0c8; border:2px solid #ffffff; border-right-color:#404040; border-bottom-color:#404040; padding:8px 20px; font-weight:bold; cursor:pointer; margin-top:15px;">Fechar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal de Relatório -->
+  <div class="modal-overlay" id="modalRelatorio">
+    <div class="modal-box modal-relatorio-box">
+      <div class="modal-relatorio-header">
+        <h2 id="modalRelatorioTitulo">Relatório</h2>
+        <button class="modal-btn-fechar" onclick="fecharModalRelatorio()">✕</button>
+      </div>
+      <div class="modal-relatorio-conteudo" id="modalRelatorioConteudo">
+        <!-- Tabela será injetada aqui -->
+      </div>
+    </div>
+  </div>
+
+<script src="assets/scripts/afastamentos-db.js"></script>
+<script src="assets/scripts/calculadora.js"></script>
+<script src="assets/scripts/index.js"></script>
+
+</body>
+
+</html>

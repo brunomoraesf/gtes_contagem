@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Documento de Aposentadoria</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: #f1f5f9;
+            padding: 40px;
+            margin: 0;
+        }
+
+        .documento {
+            background: #fff;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 50px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+            line-height: 1.6;
+            color: #000;
+            border-radius: 4px;
+        }
+
+        .header-info p {
+            margin: 6px 0;
+            font-size: 14px;
+        }
+
+        .header-info span {
+            font-weight: bold;
+        }
+
+        hr {
+            border: 0;
+            border-top: 1px solid #000;
+            margin: 20px 0;
+        }
+
+        .secao {
+            margin-bottom: 20px;
+        }
+
+        .secao p {
+            margin: 8px 0;
+            font-size: 14px;
+        }
+
+        .lista-item {
+            margin-bottom: 8px;
+            font-size: 14px;
+        }
+
+        .footer {
+            margin-top: 40px;
+            font-size: 13px;
+            text-transform: uppercase;
+        }
+
+        .btn-imprimir {
+            display: block;
+            margin: 0 auto 20px;
+            padding: 10px 20px;
+            background: #2563eb;
+            color: #fff;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: bold;
+        }
+
+        @media print {
+            body {
+                background: #fff;
+                padding: 0;
+            }
+
+            .documento {
+                box-shadow: none;
+                padding: 0;
+            }
+
+            .btn-imprimir {
+                display: none;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <button class="btn-imprimir" onclick="window.print()">🖨️ Imprimir / Salvar PDF</button>
+    <div class="documento" id="doc">Carregando...</div>
+    <script src="assets/scripts/afastamentos-db.js"></script>
+    <script>
+        const urlParams = new URLSearchParams(window.location.search);
+        const matricula = urlParams.get('matricula');
+
+        if (!matricula) {
+            document.getElementById('doc').innerHTML = '<h2>Matrícula não informada.</h2>';
+        } else {
+            fetch(`/relatorios/servidor/servidor-${matricula}.json`)
+                .then(r => r.json())
+                .then(dados => renderizar(dados))
+                .catch(e => document.getElementById('doc').innerHTML = '<h2>Erro ao carregar JSON do servidor.</h2>');
+        }
+
+        function formatarData(dataStr) {
+            if (!dataStr) return '--/--/----';
+            const s = String(dataStr).trim();
+            if (s === '99999999' || s === '99/99/9999') {
+                const hoje = new Date();
+                return `${String(hoje.getDate()).padStart(2, '0')}/${String(hoje.getMonth() + 1).padStart(2, '0')}/${hoje.getFullYear()}`;
+            }
+            if (s.length === 8) return `${s.slice(0, 2)}/${s.slice(2, 4)}/${s.slice(4, 8)}`;
+            return s;
+        }
+
+        function diasInclusivosLocal(ini, fim) {
+            if (!ini || !fim) return 0;
+            const p = (s) => {
+                let m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(s);
+                if (m) return new Date(m[3], m[2] - 1, m[1]);
+                m = /^(\d{2})(\d{2})(\d{4})$/.exec(s);
+                if (m) return new Date(m[3], m[2] - 1, m[1]);
+                return null;
+            };
+            const d1 = p(ini), d2 = p(fim);
+            if (!d1 || !d2) return 0;
+            const aZero = new Date(d1.getFullYear(), d1.getMonth(), d1.getDate());
+            const bZero = new Date(d2.getFullYear(), d2.getMonth(), d2.getDate());
+            const ms = bZero - aZero;
+            if (ms < 0) return 0;
+            return Math.round(ms / 86400000) + 1;
+        }
+
+        function renderizar(dados) {
+            const d = dados.cadastro || {};
+            const c = dados.calculos || {};
+            const regra = c.regra || {};
+
+            const nome = d.nome || 'XXXXXXXXXXXXXXXXXXXXXXX';
+            const mat = d.matricula || 'XXXXXXX';
+            const nasc = formatarData(d.data_nascimento);
+            const adm = formatarData(d.data_admissao);
+            const sexo = String(d.sexo).toUpperCase().includes('F') ? 'F' : 'M';
+            const status = d.status || 'XXXXXXXXXXXX';
+            const cargo = d.cargo || 'XXXXXXXXXXXX';
+            const ch = (parseInt(d.carga_horaria_principal) || 0) + (parseInt(d.carga_horaria_secundaria) || 0);
+
+            const idade = c.idade || 0;
+            const tcDias = c.tempoContribuicaoDias || 0;
+            const tcTxt = c.tempoContribuicaoAMD?.texto || '0 anos, 0 meses e 0 dias';
+            const teDias = c.tempoMagisterioDias || 0;
+            const teTxt = c.tempoMagisterioAMD?.texto || '0 anos, 0 meses e 0 dias';
+
+            const elegivel = regra.elegivel ? 'faz' : 'fará';
+            const leg = regra.fundamentacao || 'XXXXXXXXXXXXXXXXXXXXX';
+
+            // USA A DATA CALCULADA DO JSON. SE NÃO EXISTIR (JSON ANTIGO), USA HOJE.
+            const dataAprox = c.dataElegibilidade || new Date().toLocaleDateString('pt-BR');
+
+            // --- AVERBAÇÕES UTILIZADAS ---
+            let averbacoesHtml = '';
+            if (dados.inc_averbacoes && dados.inc_averbacoes.length > 0) {
+                dados.inc_averbacoes.forEach((l) => {
+                    averbacoesHtml += `<div class="lista-item"><strong>${diasInclusivosLocal(l.data_inicio, l.data_fim) || 0} dias</strong>, ${formatarData(l.data_inicio)} a ${formatarData(l.data_fim)}, ${l.denominacao || 'FUNÇÃO'}, ${l.orgao_averbacao || 'EFEITOS'}.</div>`;
+                });
+            } else averbacoesHtml = '<p>Nenhuma averbação registrada.</p>';
+
+            // --- PERÍODOS DEDUZIDOS (Exclusões, Afastamentos e Reversões) ---
+            let deduzidosHtml = '';
+
+            if (dados.exc_averbacoes) {
+                dados.exc_averbacoes.forEach((l) => {
+                    deduzidosHtml += `<div class="lista-item">${formatarData(l.data_inicio_exclusao)} a ${formatarData(l.data_fim_exclusao)} — EXCLUSÃO DE AVERBAÇÃO</div>`;
+                });
+            }
+            if (dados.afastamentos) {
+                dados.afastamentos.forEach((l) => {
+                    const cod = String(l.cod_sub_historico || '').trim().padStart(3, '0');
+                    const desc = window.DICIONARIO_AFASTAMENTOS[cod] || 'AFASTAMENTO';
+                    deduzidosHtml += `<div class="lista-item">${formatarData(l.data_referencia)} a ${formatarData(l.data_fim_afastamento)} — ${cod} - ${desc}</div>`;
+                });
+            }
+            if (dados.reversao_aposentadoria) {
+                dados.reversao_aposentadoria.forEach((l) => {
+                    deduzidosHtml += `<div class="lista-item">${formatarData(l.data_inicio_aposentadoria)} a ${formatarData(l.data_termino_aposentadoria)} — REVERSÃO DE APOSENTADORIA</div>`;
+                });
+            }
+
+            if (!deduzidosHtml) {
+                deduzidosHtml = '<p>Nenhum período deduzido.</p>';
+            }
+
+            document.getElementById('doc').innerHTML = `
+                <div class="header-info">
+                    <p>Nome do Servidor: <span>${nome}</span> &nbsp;&nbsp;&nbsp;&nbsp; Matrícula: <span>${mat}</span></p>
+                    <p>Data de nascimento: <span>${nasc}</span> &nbsp;&nbsp; Data de Admissão: <span>${adm}</span> &nbsp;&nbsp; Sexo: <span>${sexo}</span></p>
+                    <p>Status: <span>${status}</span> &nbsp;&nbsp; Cargo: <span>${cargo}</span> &nbsp;&nbsp; Carga Horária: <span>${ch}h</span></p>
+                </div>
+                <hr>
+                <div class="secao">
+                    <p>Idade: <strong>${idade} anos</strong></p>
+                    <p>Tempo de Contribuição: <strong>${tcDias} dias</strong>, equivalente a <strong>${tcTxt}</strong>.</p>
+                    <p>Tempo de Especial: <strong>${teDias} dias</strong>, equivalente a <strong>${teTxt}</strong>.</p>
+                </div>
+                <hr>
+                <div class="secao">
+                    <p>De acordo com a contagem de tempo de serviço efetuada por esta Gerência, informa-se que o(a) servidor(a) <strong>${elegivel}</strong> jus ao abono de permanência ou aposentadoria nos termos do (${leg}), <strong>a contar de ${dataAprox}</strong>.</p>
+                </div>
+                <hr>
+                <div class="secao">
+                    <p><strong>Foram utilizados os seguintes períodos referente à averbação de:</strong></p>
+                    ${averbacoesHtml}
+                </div>
+                <hr>
+                <div class="secao">
+                    <p><strong>Foram deduzidos os seguintes períodos da contagem de tempo referentes a:</strong></p>
+                    ${deduzidosHtml}
+                </div>
+                <hr>
+                <div class="footer">
+                    <p>INCLUIR REGRAS OU MEMORANDO CIRCULAR</p>
+                    <p>OUTRAS OBSERVAÇÕES</p>
+                </div>
+            `;
+        }
+    </script>
+</body>
+
+</html>
