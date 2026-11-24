@@ -1027,7 +1027,14 @@ function processarEvento(data) {
             mensagemTratada = 'ℹ️ Sem registros';
         }
 
-        const cor = status === 'concluido' ? 'verde' : (status === 'erro' ? 'vermelho' : 'cinza');
+        let cor = 'cinza';
+        if (status === 'concluido') {
+            if (dados?.estado === 'vazio') cor = 'azul';
+            else if (mensagemTratada && mensagemTratada.startsWith('⏭')) cor = 'laranja';
+            else cor = 'verde';
+        } else if (status === 'erro') {
+            cor = 'vermelho';
+        }
         if (mensagemTratada) adicionarLog(`[${ROBOS_META[robo].nome}] ${mensagemTratada}`, cor);
 
         let stCard = 'executando';

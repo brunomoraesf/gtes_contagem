@@ -20,7 +20,7 @@ function desenharBarra(percent, texto) {
 async function exibirInicializacao(porta) {
   console.clear();
   console.log(`\x1b[34m======================================================\x1b[0m`);
-  console.log(`\x1b[1m\x1b[36m           AUTOMAÇÃO CADASTRO\x1b[0m`);
+  console.log(`\x1b[1m\x1b[36m           AUTOMAÇÃO TEMPO DE SERVIÇO\x1b[0m`);
   console.log(`\x1b[34m======================================================\x1b[0m`);
   console.log(`\x1b[32m  ✔ Servidor ativo em:\x1b[0m \x1b[1mhttp://localhost:${porta}\x1b[0m`);
   console.log(`\x1b[34m------------------------------------------------------\x1b[0m`);

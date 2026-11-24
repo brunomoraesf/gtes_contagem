@@ -221,6 +221,8 @@ h1 {
 .log-area .log-entry .msg.vermelho { color: #f87171; }
 .log-area .log-entry .msg.cinza { color: #94a3b8; }
 .log-area .log-entry .msg.amarelo { color: #fbbf24; }
+.log-area .log-entry .msg.azul    { color: #60a5fa; }  /* sem registros (vazio) */
+.log-area .log-entry .msg.laranja { color: #fb923c; }  /* não executado (skip) */
 
 footer {
     text-align: center;

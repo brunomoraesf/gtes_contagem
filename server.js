@@ -22,7 +22,7 @@ const {
 const { sleep, desenharBarra, exibirInicializacao } = require('./utils/terminal');
 
 const app = express();
-const PORT = 3000;
+/*const PORT = 3000;*/
 
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
@@ -160,6 +160,7 @@ app.post('/executar', async (req, res) => {
   const enviar = (obj) => res.write(`data: ${JSON.stringify(obj)}\n\n`);
   const ctx = { orgao, matricula, senha, pesquisa, alvo };
   const resultados = {};
+  let matriculaInexistente = false;   // NOVO
 
   try {
     ROBOS.forEach(r => {
@@ -173,6 +174,16 @@ app.post('/executar', async (req, res) => {
       if (!lista.includes(robo)) continue;
       if (getCancelRequested()) throw new Error('EXECUCAO_CANCELADA');
 
+      // NOVO: cadastro vazio → não executa os demais robôs (sem status 'erro' p/ não destravar retry)
+      if (matriculaInexistente) {
+        enviar({
+          tipo: 'progresso', robo, status: 'concluido',
+          mensagem: '⏭ Não executado — matrícula inexistente.',
+          progresso: 100
+        });
+        continue;
+      }
+
       enviar({ tipo: 'progresso', robo, status: 'processando', mensagem: '▶ Executando...', progresso: 0 });
 
       const onProgress = (pct, msg) => {
@@ -182,6 +193,12 @@ app.post('/executar', async (req, res) => {
 
       const r = await executarUmRobo(robo, ctx, onProgress);
       resultados[robo] = r;
+
+      // NOVO: robo1 voltou vazio = matrícula inexistente
+      if (robo === 'robo1' && r.estado === 'vazio') {
+        matriculaInexistente = true;
+        log(`[ROBO1] Matrícula ${alvo} inexistente — cadastro vazio. Demais robôs não serão executados. JSON e TXT do cadastro serão apagados ao fim.`);
+      }
 
       const statusSSE = r.estado === 'erro' ? 'erro' : 'concluido';
       const msgSSE = r.estado === 'ok' ? '✅ Sucesso' :
@@ -196,9 +213,17 @@ app.post('/executar', async (req, res) => {
     }
 
     const jsonFinal = lerJSON(SUBPASTAS.servidor, alvo);
+    let msgFinal;   // NOVO
+    if (matriculaInexistente) {
+      msgFinal = `❌ Matrícula ${alvo} inexistente (cadastro vazio). Nenhum relatório gerado.`;
+    } else if (jsonFinal && jsonFinal.completo) {
+      msgFinal = '✅ Ficha completa!';
+    } else {
+      msgFinal = '⚠ Ficha incompleta (alguns robôs pendentes/erro).';
+    }
     enviar({
       tipo: 'final',
-      mensagem: jsonFinal.completo ? '✅ Ficha completa!' : '⚠ Ficha incompleta (alguns robôs pendentes/erro).',
+      mensagem: msgFinal,
       resultados: { jsonUnificado: jsonFinal, porRobo: resultados }
     });
   } catch (err) {
@@ -212,6 +237,28 @@ app.post('/executar', async (req, res) => {
     await fecharTodosBrowsers();
     executandoNoServidor = false;
     res.end();
+
+    // NOVO: limpeza pós-execução — só apaga se a matrícula foi confirmada inexistente
+    if (matriculaInexistente) {
+      try {
+        const caminhoJSONDelete = caminhoJSON(SUBPASTAS.servidor, alvo);
+        if (fs.existsSync(caminhoJSONDelete)) {
+          fs.unlinkSync(caminhoJSONDelete);
+          log(`[LIMPEZA] JSON apagado (matrícula inexistente): ${caminhoJSONDelete}`);
+        }
+      } catch (e) {
+        log(`[LIMPEZA] Erro ao apagar JSON: ${e.message}`);
+      }
+      try {
+        const caminhoTXTDelete = path.join(SUBPASTAS.cadastro, `cadastro-${alvo}.txt`);
+        if (fs.existsSync(caminhoTXTDelete)) {
+          fs.unlinkSync(caminhoTXTDelete);
+          log(`[LIMPEZA] TXT de cadastro apagado (matrícula inexistente): ${caminhoTXTDelete}`);
+        }
+      } catch (e) {
+        log(`[LIMPEZA] Erro ao apagar TXT: ${e.message}`);
+      }
+    }
   }
 });
 
@@ -353,7 +400,22 @@ app.post('/cancelar', async (_req, res) => {
   res.json({ sucesso: true });
 });
 
+function iniciarServidorHttp(porta) {
+  return new Promise((resolve, reject) => {
+    const server = app.listen(porta, () => resolve(server));
+    server.on('error', (err) => {
+      if (err.code === 'EADDRINUSE') {
+        reject(new Error('PORTA_EM_USO'));
+      } else {
+        reject(err);
+      }
+    });
+  });
+}
+
 (async function iniciar() {
+  const PORT = 3030;
+
   try {
     console.log('🔍 Verificando Chromium...');
     for (let i = 0; i <= 100; i += 10) {
@@ -362,14 +424,20 @@ app.post('/cancelar', async (_req, res) => {
     }
     console.log('');
     await garantirChromium(PASTA_RAIZ);
+    await iniciarServidorHttp(PORT);
     await exibirInicializacao(PORT);
-    app.listen(PORT, () => {
-      console.log('📡 Aguardando requisições...\n');
+    console.log('📡 Aguardando requisições...\n');
+    if (process.platform === 'win32') {
+      require('child_process').exec(`start http://localhost:${PORT}`);
+    }
+  } catch (err) {
+    if (err.message === 'PORTA_EM_USO') {
+      console.log(`\n\x1b[33m⚠ Já existe um servidor rodando na porta ${PORT}. Encerrando instância duplicada...\x1b[0m`);
       if (process.platform === 'win32') {
         require('child_process').exec(`start http://localhost:${PORT}`);
       }
-    });
-  } catch (err) {
+      process.exit(0);
+    }
     console.error('\x1b[31m❌ Erro ao iniciar:\x1b[0m', err.message);
     process.exit(1);
   }

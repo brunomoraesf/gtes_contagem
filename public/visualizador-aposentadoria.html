@@ -144,7 +144,7 @@
             const mat = d.matricula || 'XXXXXXX';
             const nasc = formatarData(d.data_nascimento);
             const adm = formatarData(d.data_admissao);
-            
+
             // CORRIGIDO AQUI: Lê "1", "2", "M", "F", etc.
             const rawSexo = String(d.sexo || '').trim().toUpperCase();
             const sexo = (rawSexo === '2' || rawSexo === 'F' || rawSexo.includes('FEM')) ? 'F' : 'M';
@@ -177,7 +177,18 @@
 
             if (dados.exc_averbacoes) {
                 dados.exc_averbacoes.forEach((l) => {
-                    deduzidosHtml += `<div class="lista-item">${formatarData(l.data_inicio_exclusao)} a ${formatarData(l.data_fim_exclusao)} — EXCLUSÃO DE AVERBAÇÃO</div>`;
+                    const temDatasExclusao = l.data_inicio_exclusao || l.data_fim_exclusao;
+                    const diasExc = parseInt(l.quantidade_dias_excluidos, 10) || 0;
+                    const refInicio = l.data_inicio_exclusao || l.data_inicio_averbacao;
+
+                    if (temDatasExclusao) {
+                        deduzidosHtml += `<div class="lista-item">${formatarData(l.data_inicio_exclusao)} a ${formatarData(l.data_fim_exclusao)} — EXCLUSÃO DE AVERBAÇÃO${diasExc ? ` (${diasExc} dias)` : ''}</div>`;
+                    } else if (diasExc > 0) {
+                        const refTexto = refInicio ? ` (ref. averbação ${formatarData(refInicio)})` : '';
+                        deduzidosHtml += `<div class="lista-item"><strong>${diasExc} dias</strong> — EXCLUSÃO DE AVERBAÇÃO${refTexto}</div>`;
+                    } else {
+                        deduzidosHtml += `<div class="lista-item">${formatarData(l.data_inicio_exclusao)} a ${formatarData(l.data_fim_exclusao)} — EXCLUSÃO DE AVERBAÇÃO</div>`;
+                    }
                 });
             }
             if (dados.afastamentos) {

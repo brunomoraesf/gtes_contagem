@@ -4,12 +4,6 @@
  * LOCALIZAÇÃO: public/assets/scripts/calculadora.js
  * ============================================================================
  * Cérebro matemático do sistema de aposentadoria do SIGRH/DF.
- * CORREÇÕES APLICADAS:
- * - Cálculo retroativo: Se já elegível, o loop volta no tempo para achar a data exata.
- * - Projeção de data de elegibilidade restaurada (okIdade iniciando como true).
- * - Respeita os checkboxes de Lotações para Tempo de Magistério.
- * - Interseção de Afastamentos com Averbações.
- * - União correta de Averbações e Lotações no Tempo Especial.
  * ============================================================================
  */
 
@@ -316,7 +310,7 @@ function calcularTempos(dadosFicha, checkboxes) {
         regra.elegivel = regra.detalhes.every(d => d.ok);
     }
     
-    // ===== CÁLCULO DA DATA DE ELEGIBILIDADE (PROJEÇÃO MÊS A MÊS) =====
+    // ===== CÁLCULO DA DATA DE ELEGIBILIDADE (COM PRECISÃO DIÁRIA SE JÁ ELEGÍVEL) =====
     let dataElegibilidade = '';
     if (regra) {
         const hojeZero = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate());
@@ -325,80 +319,120 @@ function calcularTempos(dadosFicha, checkboxes) {
         let dataRef = new Date(hojeZero);
         let achou = false;
         
-        // Se já é elegível, precisamos descobrir a data no passado. Passo -1.
-        // Se não é elegível, precisamos descobrir no futuro. Passo +1.
-        const passo = regra.elegivel ? -1 : 1;
-
-        for (let i = 0; i < 480; i++) {
-            if (i > 0) {
-                if (passo === 1) dataRef.setMonth(dataRef.getMonth() + 1);
-                else dataRef.setMonth(dataRef.getMonth() - 1);
-            }
-            
-            const diasPassados = diffDias(hojeZero, dataRef) - 1;
-            const tcFuturo = tempoContribuicaoDias + diasPassados;
-            const spFuturo = tempoServPubDias + diasPassados;
-            const carreiraFutura = tempoCarreiraDias + diasPassados;
-            const cargoFuturo = tempoCargoDias + diasPassados;
-            const magFuturo = tempoMagisterioDias + (regra.nome.includes('Magistério') ? diasPassados : 0);
-            
-            const idadeFutura = calcularIdade(nascZero, dataRef);
-            
-            let okIdade = true, okContrib = true, okSP = true, okCarreira = true, okCargo = true, okMag = true, okPontos = true;
-            
-            if (regra.id === 'art3') {
-                const pontosFuturos = idadeFutura + Math.floor(tcFuturo / 365);
-                okPontos = pontosFuturos >= (sexo === 'F' ? 85 : 95);
-                okContrib = tcFuturo >= (sexo === 'F' ? 30 : 35) * 365;
-                okSP = spFuturo >= 25 * 365;
-                okCarreira = carreiraFutura >= 15 * 365;
-                okCargo = cargoFuturo >= 5 * 365;
-            } else if (regra.id === 'art6') {
-                const minContrib = sexo === 'F' ? 30 : 35;
-                const minIdadeBase = regra.nome.includes('Magistério') ? (sexo === 'F' ? 50 : 55) : (sexo === 'F' ? 55 : 60);
-                const minMag = sexo === 'F' ? 25 : 30;
+        if (regra.elegivel) {
+            // Se já é elegível, voltamos DIA A DIA para achar o marco exato sem erro de arredondamento de mês
+            for (let i = 0; i < 18250; i++) {
+                if (i > 0) dataRef.setDate(dataRef.getDate() - 1);
                 
-                const anosContrib = Math.floor(tcFuturo / 365);
-                const anosExcedentes = Math.max(0, anosContrib - minContrib);
-                const reducaoIdade = Math.min(anosExcedentes, 5);
-                const idadeMinima = minIdadeBase - reducaoIdade;
+                const diasPassados = diffDias(hojeZero, dataRef) - 1;
+                const tcFuturo = tempoContribuicaoDias + diasPassados;
+                const spFuturo = tempoServPubDias + diasPassados;
+                const carreiraFutura = tempoCarreiraDias + diasPassados;
+                const cargoFuturo = tempoCargoDias + diasPassados;
+                const magFuturo = tempoMagisterioDias + (regra.nome.includes('Magistério') ? diasPassados : 0);
+                const idadeFutura = calcularIdade(nascZero, dataRef);
                 
-                okIdade = idadeFutura >= idadeMinima;
-                okContrib = tcFuturo >= minContrib * 365;
-                okSP = spFuturo >= 20 * 365;
-                okCarreira = carreiraFutura >= 10 * 365;
-                okCargo = cargoFuturo >= 5 * 365;
-                okMag = regra.nome.includes('Magistério') ? (magFuturo >= minMag * 365) : true;
-            } else if (regra.id === 'geral') {
-                okIdade = idadeFutura >= (sexo === 'F' ? 55 : 60);
-                okContrib = tcFuturo >= (sexo === 'F' ? 30 : 35) * 365;
-                okSP = spFuturo >= 10 * 365;
-                okCargo = cargoFuturo >= 5 * 365;
-            } else if (regra.id === 'geral_idade') {
-                okIdade = idadeFutura >= (sexo === 'F' ? 60 : 65);
-                okSP = spFuturo >= 10 * 365;
-                okCargo = cargoFuturo >= 5 * 365;
-            } else if (regra.id === 'magisterio') {
-                okIdade = idadeFutura >= (sexo === 'F' ? 50 : 55);
-                okMag = magFuturo >= (sexo === 'F' ? 25 : 30) * 365;
-                okSP = spFuturo >= 10 * 365;
-                okCargo = cargoFuturo >= 5 * 365;
-            }
-            
-            const isElegivelNoMes = okIdade && okContrib && okSP && okCarreira && okCargo && okMag && okPontos;
-
-            if (passo === 1) {
-                // Indo para o futuro
-                if (isElegivelNoMes) {
+                let okIdade = true, okContrib = true, okSP = true, okCarreira = true, okCargo = true, okMag = true, okPontos = true;
+                
+                if (regra.id === 'art3') {
+                    const pontosFuturos = idadeFutura + Math.floor(tcFuturo / 365);
+                    okPontos = pontosFuturos >= (sexo === 'F' ? 85 : 95);
+                    okContrib = tcFuturo >= (sexo === 'F' ? 30 : 35) * 365;
+                    okSP = spFuturo >= 25 * 365;
+                    okCarreira = carreiraFutura >= 15 * 365;
+                    okCargo = cargoFuturo >= 5 * 365;
+                } else if (regra.id === 'art6') {
+                    const minContrib = sexo === 'F' ? 30 : 35;
+                    const minIdadeBase = regra.nome.includes('Magistério') ? (sexo === 'F' ? 50 : 55) : (sexo === 'F' ? 55 : 60);
+                    const minMag = sexo === 'F' ? 25 : 30;
+                    const anosContrib = Math.floor(tcFuturo / 365);
+                    const anosExcedentes = Math.max(0, anosContrib - minContrib);
+                    const reducaoIdade = Math.min(anosExcedentes, 5);
+                    const idadeMinima = minIdadeBase - reducaoIdade;
+                    okIdade = idadeFutura >= idadeMinima;
+                    okContrib = tcFuturo >= minContrib * 365;
+                    okSP = spFuturo >= 20 * 365;
+                    okCarreira = carreiraFutura >= 10 * 365;
+                    okCargo = cargoFuturo >= 5 * 365;
+                    okMag = regra.nome.includes('Magistério') ? (magFuturo >= minMag * 365) : true;
+                } else if (regra.id === 'geral') {
+                    okIdade = idadeFutura >= (sexo === 'F' ? 55 : 60);
+                    okContrib = tcFuturo >= (sexo === 'F' ? 30 : 35) * 365;
+                    okSP = spFuturo >= 10 * 365;
+                    okCargo = cargoFuturo >= 5 * 365;
+                } else if (regra.id === 'geral_idade') {
+                    okIdade = idadeFutura >= (sexo === 'F' ? 60 : 65);
+                    okSP = spFuturo >= 10 * 365;
+                    okCargo = cargoFuturo >= 5 * 365;
+                } else if (regra.id === 'magisterio') {
+                    okIdade = idadeFutura >= (sexo === 'F' ? 50 : 55);
+                    okMag = magFuturo >= (sexo === 'F' ? 25 : 30) * 365;
+                    okSP = spFuturo >= 10 * 365;
+                    okCargo = cargoFuturo >= 5 * 365;
+                }
+                
+                const isElegivelNoDia = okIdade && okContrib && okSP && okCarreira && okCargo && okMag && okPontos;
+                if (!isElegivelNoDia) {
+                    dataRef.setDate(dataRef.getDate() + 1);
                     dataElegibilidade = `${String(dataRef.getDate()).padStart(2, '0')}/${String(dataRef.getMonth() + 1).padStart(2, '0')}/${dataRef.getFullYear()}`;
                     achou = true;
                     break;
                 }
-            } else {
-                // Indo para o passado
-                if (!isElegivelNoMes) {
-                    // Se falhou no mês atual (voltando), a data de elegibilidade foi o mês anterior (que era válido)
-                    dataRef.setMonth(dataRef.getMonth() + 1);
+            }
+        } else {
+            // Se não é elegível, mantém exatamente a projeção futura por mês do código original
+            for (let i = 0; i < 480; i++) {
+                if (i > 0) dataRef.setMonth(dataRef.getMonth() + 1);
+                
+                const diasPassados = diffDias(hojeZero, dataRef) - 1;
+                const tcFuturo = tempoContribuicaoDias + diasPassados;
+                const spFuturo = tempoServPubDias + diasPassados;
+                const carreiraFutura = tempoCarreiraDias + diasPassados;
+                const cargoFuturo = tempoCargoDias + diasPassados;
+                const magFuturo = tempoMagisterioDias + (regra.nome.includes('Magistério') ? diasPassados : 0);
+                const idadeFutura = calcularIdade(nascZero, dataRef);
+                
+                let okIdade = true, okContrib = true, okSP = true, okCarreira = true, okCargo = true, okMag = true, okPontos = true;
+                
+                if (regra.id === 'art3') {
+                    const pontosFuturos = idadeFutura + Math.floor(tcFuturo / 365);
+                    okPontos = pontosFuturos >= (sexo === 'F' ? 85 : 95);
+                    okContrib = tcFuturo >= (sexo === 'F' ? 30 : 35) * 365;
+                    okSP = spFuturo >= 25 * 365;
+                    okCarreira = carreiraFutura >= 15 * 365;
+                    okCargo = cargoFuturo >= 5 * 365;
+                } else if (regra.id === 'art6') {
+                    const minContrib = sexo === 'F' ? 30 : 35;
+                    const minIdadeBase = regra.nome.includes('Magistério') ? (sexo === 'F' ? 50 : 55) : (sexo === 'F' ? 55 : 60);
+                    const minMag = sexo === 'F' ? 25 : 30;
+                    const anosContrib = Math.floor(tcFuturo / 365);
+                    const anosExcedentes = Math.max(0, anosContrib - minContrib);
+                    const reducaoIdade = Math.min(anosExcedentes, 5);
+                    const idadeMinima = minIdadeBase - reducaoIdade;
+                    okIdade = idadeFutura >= idadeMinima;
+                    okContrib = tcFuturo >= minContrib * 365;
+                    okSP = spFuturo >= 20 * 365;
+                    okCarreira = carreiraFutura >= 10 * 365;
+                    okCargo = cargoFuturo >= 5 * 365;
+                    okMag = regra.nome.includes('Magistério') ? (magFuturo >= minMag * 365) : true;
+                } else if (regra.id === 'geral') {
+                    okIdade = idadeFutura >= (sexo === 'F' ? 55 : 60);
+                    okContrib = tcFuturo >= (sexo === 'F' ? 30 : 35) * 365;
+                    okSP = spFuturo >= 10 * 365;
+                    okCargo = cargoFuturo >= 5 * 365;
+                } else if (regra.id === 'geral_idade') {
+                    okIdade = idadeFutura >= (sexo === 'F' ? 60 : 65);
+                    okSP = spFuturo >= 10 * 365;
+                    okCargo = cargoFuturo >= 5 * 365;
+                } else if (regra.id === 'magisterio') {
+                    okIdade = idadeFutura >= (sexo === 'F' ? 50 : 55);
+                    okMag = magFuturo >= (sexo === 'F' ? 25 : 30) * 365;
+                    okSP = spFuturo >= 10 * 365;
+                    okCargo = cargoFuturo >= 5 * 365;
+                }
+                
+                const isElegivelNoMes = okIdade && okContrib && okSP && okCarreira && okCargo && okMag && okPontos;
+                if (isElegivelNoMes) {
                     dataElegibilidade = `${String(dataRef.getDate()).padStart(2, '0')}/${String(dataRef.getMonth() + 1).padStart(2, '0')}/${dataRef.getFullYear()}`;
                     achou = true;
                     break;
