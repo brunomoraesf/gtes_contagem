@@ -6,6 +6,140 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Automação para Ficha de Cadastro</title>
   <link rel="stylesheet" href="assets/estilos/index.css">
+
+  <style>
+    /* ===== Modal de Configurações ===== */
+    #modalConfigBox {
+      width: 460px;
+      height: 520px;
+      max-width: 92vw;
+      max-height: 90vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    #modalConfigBox .modal-content {
+      flex: 1;
+      overflow-y: auto;
+      min-height: 0;
+      padding: 8px 10px !important;
+    }
+
+    #modalConfigBox .modal-title {
+      cursor: move;
+      user-select: none;
+    }
+
+    body.modal-open {
+      overflow: hidden !important;
+    }
+
+    /* Seções compactas */
+    .cfg-section {
+      padding: 6px 2px;
+    }
+
+    .cfg-section-title {
+      font-size: 10.5px;
+      font-weight: bold;
+      color: #666;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+      margin-bottom: 5px;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .cfg-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 2px 6px;
+    }
+
+    .cfg-toggle {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      padding: 3px 5px;
+      font-size: 11.5px;
+      line-height: 1.3;
+      cursor: pointer;
+      border-radius: 3px;
+      color: #222;
+      user-select: none;
+    }
+
+    .cfg-toggle:hover {
+      background: #f0f0ea;
+    }
+
+    .cfg-toggle input {
+      width: 13px;
+      height: 13px;
+      margin: 0;
+      cursor: pointer;
+      accent-color: #2563eb;
+      flex-shrink: 0;
+    }
+
+    .cfg-divider {
+      border: none;
+      border-top: 1px solid #c8c4ba;
+      margin: 6px 0;
+    }
+
+    .cfg-btn {
+      width: 100%;
+      background: #d4d0c8;
+      border: 2px solid #ffffff;
+      border-right-color: #404040;
+      border-bottom-color: #404040;
+      padding: 5px 10px;
+      font-size: 11.5px;
+      cursor: pointer;
+      font-weight: bold;
+      color: #222;
+    }
+
+    .cfg-btn:active {
+      border-color: #404040 #ffffff #ffffff #404040;
+      padding: 6px 9px 4px 11px;
+    }
+
+    .cfg-hint {
+      font-size: 10.5px;
+      color: #666;
+      line-height: 1.35;
+      margin: 3px 2px 0 2px;
+    }
+
+    /* Linhas alteradas manualmente */
+    tr.linha-editada td {
+      color: #a65300 !important;
+      background-color: #ffe699 !important;
+    }
+
+    tr.linha-editada td input[type="checkbox"] {
+      accent-color: #a65300;
+    }
+
+    #modalErro {
+      z-index: 10001 !important;
+    }
+
+    #modalConfigOverlay {
+      z-index: 9999;
+    }
+
+    #modalRelatorio {
+      z-index: 9999;
+    }
+
+    #modalInfoOverlay {
+      z-index: 9999;
+    }
+  </style>
 </head>
 
 <body>
@@ -170,42 +304,48 @@
     <div class="modal-box">
       <h2 id="modalTitulo">Aviso</h2>
       <p id="modalMensagem">Mensagem</p>
-      <button class="btn btn-primary" id="modalBtnFechar">OK</button>
+      <div style="display:flex; gap:8px; justify-content:center; margin-top:12px;">
+        <button class="btn btn-secondary" id="modalBtnCancelar" style="display:none;">Cancelar</button>
+        <button class="btn btn-primary" id="modalBtnFechar">OK</button>
+      </div>
     </div>
   </div>
 
   <div class="floating-btn-top" id="topBtn" onclick="window.scrollTo({top:0,behavior:'smooth'})" title="Voltar ao topo">
     ↑</div>
-  <div class="floating-btn-manual" id="manualBtn" onclick="abrirVisualizadorVazio()" title="Abrir visualizador">✏️</div>
+  <div class="floating-btn-manual" id="configBtn" onclick="abrirModalConfig()" title="Configurações">⚙️</div>
   <div class="floating-btn-info" id="infoBtn" onclick="abrirModalInfo()">i</div>
 
-  <!-- Modal de Informações -->
-  <div class="modal-overlay" id="modalInfoOverlay" onclick="if(event.target===this) fecharModalInfo()">
-    <div class="modal-winxp">
-      <div class="modal-title">
-        <span>Informações</span>
+  <!-- ⚙️ Modal de Configurações -->
+  <div class="modal-overlay" id="modalConfigOverlay" onclick="if(event.target===this) fecharModalConfig()">
+    <div class="modal-winxp" id="modalConfigBox">
+      <div class="modal-title" id="modalConfigTitle" onmousedown="iniciarDragConfig(event)">
+        <span>Configurações</span>
         <div class="window-controls">
           <button onclick="return false;">─</button>
           <button onclick="return false;">□</button>
-          <button onclick="fecharModalInfo()">✕</button>
+          <button onclick="fecharModalConfig()">✕</button>
         </div>
       </div>
-      <div class="modal-content info-content">
-        <p style="font-size: 14px; text-align: left;">
-          <strong>Desenvolvido em 2026 por:</strong><br><br>
-          <strong>Bruno Moraes</strong> – Matr. 214.563-4<br>
-          <a href="https://github.com/ProfMaiane/" target="_blank" style="color: #1a73e8;">GitHub</a><br><br>
-          <strong>Maiane Neres</strong> – Matr. 2001.924-6<br>
-          <a href="https://github.com/brunomoraesdigital" target="_blank" style="color: #1a73e8;">GitHub</a><br><br>
-          E a toda a equipe GECAF<br><br>
-        </p>
-        <p style="text-align: left; font-size: 13px;">
-          <strong>Como as informações são armazenadas?</strong><br>
-          Todos os dados inseridos permanecem apenas <br>no seu navegador.<br>
-          Nenhuma informação é enviada a servidores <br>externos.<br>
-        </p>
-        <button onclick="fecharModalInfo()"
-          style="background:#d4d0c8; border:2px solid #ffffff; border-right-color:#404040; border-bottom-color:#404040; padding:8px 20px; font-weight:bold; cursor:pointer; margin-top:15px;">Fechar</button>
+      <div class="modal-content" id="modalConfigContent">
+        <!-- conteúdo injetado via JS -->
+      </div>
+    </div>
+  </div>
+
+  <!-- ⚙️ Modal de Configurações -->
+  <div class="modal-overlay" id="modalConfigOverlay" onclick="if(event.target===this) fecharModalConfig()">
+    <div class="modal-winxp" id="modalConfigBox">
+      <div class="modal-title" id="modalConfigTitle" onmousedown="iniciarDragConfig(event)">
+        <span>Configurações</span>
+        <div class="window-controls">
+          <button onclick="return false;">─</button>
+          <button onclick="return false;">□</button>
+          <button onclick="fecharModalConfig()">✕</button>
+        </div>
+      </div>
+      <div class="modal-content info-content" id="modalConfigContent">
+        <!-- conteúdo injetado via JS -->
       </div>
     </div>
   </div>
@@ -223,9 +363,11 @@
     </div>
   </div>
 
-<script src="assets/scripts/afastamentos-db.js"></script>
-<script src="assets/scripts/calculadora.js"></script>
-<script src="assets/scripts/index.js"></script>
+  <script src="assets/scripts/afastamentos-db.js"></script>
+  <script src="assets/scripts/lotacoes-db.js"></script>
+  <script src="assets/scripts/unidades-administrativas-db.js"></script> <!-- NOVO -->
+  <script src="assets/scripts/calculadora.js"></script>
+  <script src="assets/scripts/index.js"></script>
 
 </body>
 

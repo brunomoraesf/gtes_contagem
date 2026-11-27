@@ -26,11 +26,44 @@ function diasInclusivos(dataIni, dataFim) {
 function mostrarModal(titulo, mensagem, callback) {
     document.getElementById('modalTitulo').textContent = titulo;
     document.getElementById('modalMensagem').innerHTML = mensagem;
+
+    const btnCancelar = document.getElementById('modalBtnCancelar');
+    if (btnCancelar) {
+        btnCancelar.style.display = 'none';
+        btnCancelar.onclick = null;
+    }
+
+    const btnOk = document.getElementById('modalBtnFechar');
+    btnOk.textContent = 'OK';
+
     document.getElementById('modalErro').classList.add('active');
-    document.getElementById('modalBtnFechar').onclick = function () {
+    btnOk.onclick = function () {
         document.getElementById('modalErro').classList.remove('active');
         if (callback) callback();
     };
+}
+
+function mostrarModalConfirmacao(titulo, mensagem, onConfirm, onCancel) {
+    document.getElementById('modalTitulo').textContent = titulo;
+    document.getElementById('modalMensagem').innerHTML = mensagem;
+
+    const btnCancelar = document.getElementById('modalBtnCancelar');
+    const btnOk = document.getElementById('modalBtnFechar');
+
+    btnCancelar.style.display = '';
+    btnCancelar.textContent = 'Cancelar';
+    btnCancelar.onclick = function () {
+        document.getElementById('modalErro').classList.remove('active');
+        if (onCancel) onCancel();
+    };
+
+    btnOk.textContent = 'Continuar';
+    btnOk.onclick = function () {
+        document.getElementById('modalErro').classList.remove('active');
+        if (onConfirm) onConfirm();
+    };
+
+    document.getElementById('modalErro').classList.add('active');
 }
 
 document.getElementById('senhaToggle').addEventListener('click', function () {
@@ -43,6 +76,17 @@ document.getElementById('senhaToggle').addEventListener('click', function () {
         this.textContent = '🙈';
     }
 });
+
+// ===== ESTADO DAS CONFIGURAÇÕES =====
+// Averbações agora é UM único grupo ('inc') que libera os 2 checkboxes
+const configUnlocked = {
+    inc: false,
+    exc: false,
+    afa: false,
+    rev: false,
+    lot: false
+};
+let dragConfigData = null;
 
 let estado = 'idle';
 let abortController = null;
@@ -98,6 +142,18 @@ function fmtDataBR(valor) {
 }
 
 function v(x) { return (x === null || x === undefined || x === '') ? '-----' : x; }
+
+// ===== CONFIGURAÇÃO: VISUALIZAÇÃO DO NAVEGADOR =====
+
+function enviarShowBrowser(valor) {
+    return fetch('/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ showBrowser: !!valor })
+    }).catch(err => {
+        console.error('[config] Falha ao salvar showBrowser:', err);
+    });
+}
 
 // ===== TOTAIS E ELEGIBILIDADE =====
 function atualizarLinhaTotal(elId, marcadas, total, textoDias) {
@@ -255,6 +311,11 @@ function abrirVisualizador() {
 
 document.addEventListener('change', (e) => {
     if (e.target.classList.contains('linha-check') || e.target.classList.contains('linha-check-inc')) {
+        // Se o usuário mexeu manualmente (checkbox habilitado), marca a linha
+        if (!e.target.disabled) {
+            const tr = e.target.closest('tr');
+            if (tr) tr.classList.add('linha-editada');
+        }
         recalcularTotais();
     }
 });
@@ -290,6 +351,48 @@ function renderizarFicha() {
         return val;
     };
 
+    // ===== CLASSIFICAÇÃO DE LOTAÇÃO COMO MAGISTÉRIO =====
+    function normalizeStr(s) {
+        return String(s || '')
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '')
+            .toUpperCase()
+            .trim();
+    }
+
+    // ===== FORMATAÇÃO DA UNIDADE ADMINISTRATIVA =====
+
+    function fmtUA(ua) {
+        const codigo = String(ua || '').trim().padStart(3, '0');
+        const entry = (window.UNIDADES_ADMINISTRATIVAS || {})[codigo];
+        if (!entry) return ua ? String(ua) : '-----';
+        return `${codigo} - ${entry.sigla}`;
+    }
+
+    function getUADescricao(ua) {
+        const codigo = String(ua || '').trim().padStart(3, '0');
+        const entry = (window.UNIDADES_ADMINISTRATIVAS || {})[codigo];
+        return entry ? entry.nome : '';
+    }
+
+    function lotacaoEhMagisterio(descricao, ua) {
+        const desc = normalizeStr(descricao);
+        const cfg = window.LOTACOES_KEYWORDS || { EXCLUSAO: [], INCLUSAO: [], UAS_DESMARCADAS: [] };
+
+        // Regra 1: EXCLUSÃO vence tudo
+        if ((cfg.EXCLUSAO || []).some(k => desc.includes(normalizeStr(k)))) return false;
+
+        // Regra 2: INCLUSÃO vence UA bloqueada (ex.: FUNDAP com UA 099)
+        if ((cfg.INCLUSAO || []).some(k => desc.includes(normalizeStr(k)))) return true;
+
+        // Regra 3: UA bloqueada (documenta intent — regra 4 cobre o mesmo resultado)
+        const uaStr = String(ua || '').trim().padStart(3, '0');
+        if ((cfg.UAS_DESMARCADAS || []).map(u => String(u).padStart(3, '0')).includes(uaStr)) return false;
+
+        // Regra 4: default conservador (desmarca)
+        return false;
+    }
+
     const renderTabela = (dados, colunas, opts = {}) => {
         const { vaziaMsg = 'Nenhum registro encontrado.', grupoId = '', camposData = null, duploCheck = false } = opts;
         if (!dados || dados.length === 0) return `<div class="tabela-vazia">${vaziaMsg}</div>`;
@@ -320,26 +423,28 @@ function renderizarFicha() {
             html += '<tr>';
 
             if (duploCheck) {
-                html += `<td class="col-fixa-esq-1"><input type="checkbox" class="linha-check-inc" data-tipo="averbado" data-idx="${originalIdx}" checked disabled></td>`;
+                const unlocked = configUnlocked.inc ? '' : 'disabled';
+
+                html += `<td class="col-fixa-esq-1"><input type="checkbox" class="linha-check-inc" data-tipo="averbado" data-idx="${originalIdx}" data-initial="1" checked ${unlocked}></td>`;
 
                 const cod = String(linha.codigo_averbacao || '').trim();
                 const codigosMagisterio = ['02', '10', '20', '52', '104'];
                 const isMagCode = codigosMagisterio.includes(cod);
 
                 let magChecked = '';
-                if (isProfessor && isMagCode) {
-                    magChecked = 'checked';
-                }
-                html += `<td class="col-fixa-esq-2"><input type="checkbox" class="linha-check-inc" data-tipo="magisterio" data-idx="${originalIdx}" ${magChecked} disabled></td>`;
+                if (isProfessor && isMagCode) magChecked = 'checked';
+                const magInitial = magChecked ? '1' : '0';
+                html += `<td class="col-fixa-esq-2"><input type="checkbox" class="linha-check-inc" data-tipo="magisterio" data-idx="${originalIdx}" data-initial="${magInitial}" ${magChecked} ${unlocked}></td>`;
             } else {
                 let chkAttr = 'checked';
+                let chkInitial = '1';
                 if (grupoId === 'lot') {
-                    const ua = String(linha.unidade_administrativa || '').trim();
-                    const validUAs = ['001', '002', '003', '004', '005', '006', '007', '008', '009', '010', '011', '012', '013', '014', '015'];
-                    const isValida = validUAs.includes(ua.padStart(3, '0'));
+                    const isValida = lotacaoEhMagisterio(linha.lotacao, linha.unidade_administrativa);
                     chkAttr = isValida ? 'checked' : '';
+                    chkInitial = isValida ? '1' : '0';
                 }
-                html += `<td class="col-fixa-esq-1"><input type="checkbox" class="linha-check" data-grupo="${grupoId}" data-idx="${originalIdx}" ${chkAttr} disabled></td>`;
+                const unlocked = configUnlocked[grupoId] ? '' : 'disabled';
+                html += `<td class="col-fixa-esq-1"><input type="checkbox" class="linha-check" data-grupo="${grupoId}" data-idx="${originalIdx}" data-initial="${chkInitial}" ${chkAttr} ${unlocked}></td>`;
             }
 
             colunasDeslizantes.forEach(c => {
@@ -356,6 +461,8 @@ function renderizarFicha() {
                     } else {
                         val = camposData ? (diasInclusivos(linha[camposData.ini], linha[camposData.fim]) ?? '-----') : '-----';
                     }
+                } else if (c.key === 'unidade_administrativa') {
+                    val = fmtUA(val);
                 } else if (c.isDate) {
                     val = fmtDataBR(val);
                 } else if (val === null || val === undefined || val === '') {
@@ -369,6 +476,11 @@ function renderizarFicha() {
                     const payload = (codigo && codigo !== texto) ? `${codigo} - ${texto}` : texto;
                     const payloadEsc = payload.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
                     html += `<td class="celula-copiavel"${titleAttr} data-copy="${payloadEsc}" onclick="copiarCelula(this)">${texto}</td>`;
+                } else if (typeof c.tooltipFn === 'function') {
+                    const tooltip = c.tooltipFn(linha);
+                    const texto = String(val);
+                    const titleAttr = (tooltip && tooltip !== texto) ? ` title="${tooltip.replace(/"/g, '&quot;')}"` : '';
+                    html += `<td${titleAttr}>${texto}</td>`;
                 } else {
                     html += `<td>${val}</td>`;
                 }
@@ -466,7 +578,12 @@ function renderizarFicha() {
     const colunasLot = [
         { key: 'matricula', label: 'Matrícula', width: '100px' },
         { key: 'cargo', label: 'Cargo', width: '150px' },
-        { key: 'unidade_administrativa', label: 'COD U.A.', width: '160px' },
+        {
+            key: 'unidade_administrativa',
+            label: 'COD U.A.',
+            width: '110px',
+            tooltipFn: (linha) => getUADescricao(linha.unidade_administrativa)
+        },
         { key: 'lotacao', label: 'Lotação', width: '320px', tooltipKey: 'lotacao_codigo', copyPrefixKey: 'lotacao_codigo' },
         { key: 'inicio_escala', label: 'Início Escala', isDate: true, width: '90px' },
         { key: 'fim_escala', label: 'Fim Escala', isDate: true, width: '90px' },
@@ -758,6 +875,9 @@ window.onload = function () {
     isLimpo = true;
     setEstado('idle');
     renderizarFicha();
+
+    // Reset da visualização do navegador a cada carregamento de página
+    enviarShowBrowser(false);
 };
 
 let isLimpo = true;
@@ -1163,4 +1283,177 @@ async function abrirModalRelatorio(event, url, titulo) {
 
 function fecharModalRelatorio() {
     document.getElementById('modalRelatorio').style.display = 'none';
+}
+
+// ============================================================================
+// CONFIGURAÇÕES — Modal compacto, drag, bloqueio de scroll, edição
+// ============================================================================
+
+function abrirModalConfig() {
+    const box = document.getElementById('modalConfigBox');
+    if (box) box.style.transform = '';
+    renderizarConfig();
+    document.getElementById('modalConfigOverlay').classList.add('active');
+    document.body.classList.add('modal-open');
+}
+
+function fecharModalConfig() {
+    document.getElementById('modalConfigOverlay').classList.remove('active');
+    document.body.classList.remove('modal-open');
+    dragConfigData = null;
+}
+
+function renderizarConfig() {
+    const content = document.getElementById('modalConfigContent');
+    if (!content) return;
+
+    const grupos = [
+        { key: 'inc', label: 'Liberar Averbações' },
+        { key: 'exc', label: 'Liberar Exclusões' },
+        { key: 'afa', label: 'Liberar Afastamentos' },
+        { key: 'rev', label: 'Liberar Reversões' },
+        { key: 'lot', label: 'Liberar Lotações' }
+    ];
+
+    content.innerHTML = `
+        <div class="cfg-section">
+            <div class="cfg-section-title">🔓 Edição de Checkboxes</div>
+            <div class="cfg-grid">
+                ${grupos.map(g => `
+                    <label class="cfg-toggle">
+                        <input type="checkbox" data-config-grupo="${g.key}" ${configUnlocked[g.key] ? 'checked' : ''}>
+                        <span>${g.label}</span>
+                    </label>
+                `).join('')}
+            </div>
+            <div class="cfg-hint">Linhas alteradas manualmente ficam destacadas em laranja.</div>
+        </div>
+
+        <hr class="cfg-divider">
+
+        <div class="cfg-section">
+            <div class="cfg-section-title">🌐 Navegador</div>
+            <label class="cfg-toggle" style="grid-column: 1 / -1;">
+                <input type="checkbox" id="cfgShowBrowser">
+                <span>Exibir Chromium durante execução</span>
+            </label>
+            <div class="cfg-hint">Desligado por padrão a cada carregamento e a cada início de execução. Aplicado na próxima abertura de navegador (próximo robô).</div>
+        </div>
+
+        <hr class="cfg-divider">
+
+        <!-- ⬇ Próximas seções de configuração entram AQUI ⬇ -->
+
+        <hr class="cfg-divider">
+
+        <div class="cfg-section">
+            <div class="cfg-section-title">↺ Restaurar</div>
+            <button class="cfg-btn" id="btnResetarConfig">Restaurar configuração padrão</button>
+            <div class="cfg-hint">Religa o bloqueio de todos os checkboxes. As edições manuais (e o destaque laranja) são preservadas.</div>
+        </div>
+    `;
+
+    content.querySelectorAll('input[data-config-grupo]').forEach(ch => {
+        ch.addEventListener('change', (e) => {
+            const g = e.target.dataset.configGrupo;
+            configUnlocked[g] = e.target.checked;
+            aplicarConfigGrupo(g);
+        });
+    });
+
+    document.getElementById('btnResetarConfig')
+        .addEventListener('click', restaurarConfigPadrao);
+
+    // --- Visualização do navegador ---
+    const chkBrowser = document.getElementById('cfgShowBrowser');
+    if (chkBrowser) {
+        fetch('/config')
+            .then(r => r.json())
+            .then(data => { chkBrowser.checked = !!data.showBrowser; })
+            .catch(() => { chkBrowser.checked = false; });
+
+        chkBrowser.addEventListener('change', (e) => {
+            if (e.target.checked) {
+                e.target.checked = false;
+                mostrarModalConfirmacao(
+                    '⚠️ Ação não recomendada',
+                    '<div style="text-align:left; line-height:1.5;">' +
+                    '<strong style="color:#b91c1c;">Não recomendamos ativar esta opção.</strong><br><br>' +
+                    'Ao exibir o Chromium durante a execução, o sistema:<br>' +
+                    '• Ficará <strong>significativamente mais lento</strong>;<br>' +
+                    '• Consumirá <strong>muito mais memória e CPU</strong>;<br>' +
+                    '• Poderá causar <strong>travamentos e falhas</strong> nos robôs;<br>' +
+                    '• Aumentará o risco de <strong>perda de dados</strong> durante a extração.<br><br>' +
+                    'Esta opção existe apenas para <strong>diagnóstico técnico</strong> e não deve ser usada em execuções normais.<br><br>' +
+                    '<em>Tem certeza de que deseja prosseguir mesmo assim?</em>' +
+                    '</div>',
+                    () => {
+                        e.target.checked = true;
+                        enviarShowBrowser(true);
+                    },
+                    () => {
+                        e.target.checked = false;
+                    }
+                );
+            } else {
+                enviarShowBrowser(false);
+            }
+        });
+    }
+}
+
+function aplicarConfigGrupo(grupo) {
+    const unlocked = configUnlocked[grupo];
+    let selector;
+    if (grupo === 'inc') selector = '.linha-check-inc';
+    else selector = `.linha-check[data-grupo="${grupo}"]`;
+
+    document.querySelectorAll(selector).forEach(ch => {
+        ch.disabled = !unlocked;
+    });
+}
+
+function restaurarConfigPadrao() {
+    // Reseta SÓ a configuração (todos os grupos voltam a "bloqueado")
+    Object.keys(configUnlocked).forEach(k => { configUnlocked[k] = false; });
+
+    // Reaplica o estado de bloqueio em todos os checkboxes
+    document.querySelectorAll('.linha-check, .linha-check-inc').forEach(ch => {
+        ch.disabled = true;
+    });
+
+    // Re-renderiza o painel (toggles voltam a "desmarcados")
+    renderizarConfig();
+
+    // NÃO mexe no estado dos checkboxes nem no destaque laranja
+}
+
+// ===== DRAG DO MODAL =====
+function iniciarDragConfig(e) {
+    if (e.target.closest('.window-controls')) return;
+    if (e.target.tagName === 'BUTTON') return;
+    if (e.target.tagName === 'INPUT') return;
+
+    dragConfigData = {
+        startX: e.clientX,
+        startY: e.clientY,
+        box: document.getElementById('modalConfigBox')
+    };
+
+    document.addEventListener('mousemove', moverDragConfig);
+    document.addEventListener('mouseup', pararDragConfig);
+    e.preventDefault();
+}
+
+function moverDragConfig(e) {
+    if (!dragConfigData) return;
+    const dx = e.clientX - dragConfigData.startX;
+    const dy = e.clientY - dragConfigData.startY;
+    dragConfigData.box.style.transform = `translate(${dx}px, ${dy}px)`;
+}
+
+function pararDragConfig() {
+    dragConfigData = null;
+    document.removeEventListener('mousemove', moverDragConfig);
+    document.removeEventListener('mouseup', pararDragConfig);
 }

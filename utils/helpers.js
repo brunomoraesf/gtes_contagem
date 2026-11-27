@@ -9,6 +9,12 @@ const execAsync = promisify(exec);
 // Variáveis globais de controle
 let cancelRequested = false;
 let activeBrowsers = [];
+// Controle de visualização do navegador (headless vs visível)
+// Default: false → headless (oculto). Alterado via POST /config
+let showBrowser = false;
+
+function setShowBrowser(v) { showBrowser = !!v; }
+function getShowBrowser() { return showBrowser; }
 
 function setCancelRequested(value) {
   cancelRequested = value;
@@ -40,12 +46,12 @@ async function clicarNoFrame(page, selector, porTexto = false, timeout = 8000) {
       try {
         const elemento = porTexto ? frame.locator(`text="${selector}"`) : frame.locator(selector);
         if (await elemento.count() > 0) {
-          await elemento.first().scrollIntoViewIfNeeded().catch(() => {});
+          await elemento.first().scrollIntoViewIfNeeded().catch(() => { });
           await page.waitForTimeout(300);
           await elemento.first().dispatchEvent('click');
           return true;
         }
-      } catch (e) {}
+      } catch (e) { }
     }
     await page.waitForTimeout(300);
   }
@@ -55,7 +61,7 @@ async function clicarNoFrame(page, selector, porTexto = false, timeout = 8000) {
 async function abrirBrowser(PASTA_RAIZ) {
   const chromePath = path.join(PASTA_RAIZ, 'chrome-win', 'chrome.exe');
   const options = {
-    headless: false,
+    headless: !showBrowser,  // true = oculto, false = visível
     args: [
       '--disable-blink-features=AutomationControlled',
       '--disable-dev-shm-usage',
@@ -86,7 +92,7 @@ async function abrirBrowser(PASTA_RAIZ) {
 
 async function fecharTodosBrowsers() {
   for (const b of activeBrowsers) {
-    try { await b.close(); } catch (_) {}
+    try { await b.close(); } catch (_) { }
   }
   activeBrowsers = [];
 }
@@ -177,5 +183,7 @@ module.exports = {
   clicarNoFrame,
   abrirBrowser,
   fecharTodosBrowsers,
-  garantirChromium
+  garantirChromium,
+  setShowBrowser,
+  getShowBrowser
 };

@@ -6,7 +6,7 @@
 function formatarData(valor) {
   if (!valor) return '';
   const s = String(valor).trim();
-  
+
   // Se já está no formato dd/mm/aaaa, tira as barras
   if (/^\d{2}\/\d{2}\/\d{4}$/.test(s)) {
     return s.replace(/\//g, '');
@@ -25,7 +25,7 @@ function formatarData(valor) {
     const d1 = parseInt(s.slice(0, 2), 10);
     const m1 = parseInt(s.slice(2, 4), 10);
     const y1 = parseInt(s.slice(4, 8), 10);
-    
+
     if (isValidDate(y1, m1, d1)) {
       return s; // Retorna no formato ddmmaaaa (ex: "20041995")
     }
@@ -39,7 +39,7 @@ function formatarData(valor) {
       return `${s.slice(6, 8)}${s.slice(4, 6)}${s.slice(0, 4)}`; // Retorna ddmmaaaa
     }
   }
-  
+
   return s;
 }
 
@@ -124,12 +124,26 @@ function parseRevAposentadoria(conteudo) {
   if (linhas.length < 2) return [];
   return linhas.slice(1).map(l => {
     const v = splitCols(l);
+    const iniFmt = formatarData(v[1]);
+    const fimFmt = formatarData(v[2]);
+    let dias = v[4] || '';
+
+    // Fallback: se SIGRH mandar 0/vazio mas tiver datas válidas, calcular do intervalo
+    const nDias = parseInt(dias, 10);
+    if ((!nDias || nDias <= 0) && /^\d{8}$/.test(iniFmt) && /^\d{8}$/.test(fimFmt)) {
+      const d1 = new Date(+iniFmt.slice(4, 8), +iniFmt.slice(2, 4) - 1, +iniFmt.slice(0, 2));
+      const d2 = new Date(+fimFmt.slice(4, 8), +fimFmt.slice(2, 4) - 1, +fimFmt.slice(0, 2));
+      if (!isNaN(d1) && !isNaN(d2) && d2 >= d1) {
+        dias = String(Math.round((d2 - d1) / 86400000) + 1);
+      }
+    }
+
     return {
       matricula: v[0] || '',
-      data_inicio_aposentadoria: formatarData(v[1]),
-      data_termino_aposentadoria: formatarData(v[2]),
+      data_inicio_aposentadoria: iniFmt,
+      data_termino_aposentadoria: fimFmt,
       data_revisao_aposentadoria: formatarData(v[3]),
-      dias_aposentado: v[4] || ''
+      dias_aposentado: dias
     };
   });
 }
@@ -138,7 +152,7 @@ function parseRevAposentadoria(conteudo) {
 function parseLotacoes(conteudo) {
   const linhas = splitLinhas(conteudo);
   if (linhas.length < 2) return [];
-  
+
   const hoje = new Date();
   const d = String(hoje.getDate()).padStart(2, '0');
   const m = String(hoje.getMonth() + 1).padStart(2, '0');
@@ -149,7 +163,7 @@ function parseLotacoes(conteudo) {
     const v = splitCols(l);
     let fim = formatarData(v[5]);
     if (fim === '99999999' || fim === '99/99/9999') {
-        fim = hojeFmt;
+      fim = hojeFmt;
     }
 
     return {
@@ -202,7 +216,7 @@ function parseDescricaoLotacoes(conteudo) {
 
   // Fallback posicional: 4 colunas → (codLot, denLot, codUA, denUA)
   if (codLot < 0 || denLot < 0) { codLot = 0; denLot = 1; }
-  if (codUA < 0 || denUA < 0)   { codUA = 2; denUA = 3; }
+  if (codUA < 0 || denUA < 0) { codUA = 2; denUA = 3; }
 
   console.log('[parser-desc-lot] headers=', headers);
   console.log('[parser-desc-lot] índices → codLot:', codLot, 'denLot:', denLot, 'codUA:', codUA, 'denUA:', denUA);

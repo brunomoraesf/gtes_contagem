@@ -10,28 +10,28 @@
 function parseDate(s) {
     if (!s) return null;
     const str = String(s).trim();
-    if (str === '99999999' || str === '99/99/9999') return new Date(); 
-    
+    if (str === '99999999' || str === '99/99/9999') return new Date();
+
     let m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(str);
     if (m) return new Date(Number(m[3]), Number(m[2]) - 1, Number(m[1]));
-    
+
     m = /^(\d{2})(\d{2})(\d{4})$/.exec(str);
     if (m) return new Date(Number(m[3]), Number(m[2]) - 1, Number(m[1]));
-    
-    return null; 
+
+    return null;
 }
 
 function diffDias(d1, d2) {
     if (!d1 || !d2) return 0;
     const a = new Date(d1.getFullYear(), d1.getMonth(), d1.getDate());
     const b = new Date(d2.getFullYear(), d2.getMonth(), d2.getDate());
-    return Math.round((b - a) / 86400000) + 1; 
+    return Math.round((b - a) / 86400000) + 1;
 }
 
 function unirIntervalos(intervalos) {
     if (!intervalos.length) return [];
     intervalos.sort((a, b) => a.inicio - b.inicio);
-    const res = [intervalos[0]]; 
+    const res = [intervalos[0]];
     for (let i = 1; i < intervalos.length; i++) {
         const atual = intervalos[i];
         const ultimo = res[res.length - 1];
@@ -46,9 +46,9 @@ function unirIntervalos(intervalos) {
 
 function somarIntervalos(intervalos) {
     let total = 0;
-    const unidos = unirIntervalos(intervalos); 
+    const unidos = unirIntervalos(intervalos);
     for (const int of unidos) {
-        total += diffDias(int.inicio, int.fim); 
+        total += diffDias(int.inicio, int.fim);
     }
     return total;
 }
@@ -70,14 +70,14 @@ function intersectarIntervalos(listaA, listaB) {
 
 function diasParaAMD(dias) {
     if (dias <= 0) return { anos: 0, meses: 0, dias: 0, texto: '0 anos, 0 meses e 0 dias' };
-    const base = new Date(2000, 0, 1); 
+    const base = new Date(2000, 0, 1);
     const fim = new Date(base);
     fim.setDate(fim.getDate() + dias);
-    
+
     let anos = fim.getFullYear() - base.getFullYear();
     let meses = fim.getMonth() - base.getMonth();
     let d = fim.getDate() - base.getDate();
-    
+
     if (d < 0) {
         meses--;
         const ultimoDiaMesAnterior = new Date(fim.getFullYear(), fim.getMonth(), 0).getDate();
@@ -103,7 +103,7 @@ function calcularTempos(dadosFicha, checkboxes) {
     const dataNasc = parseDate(dadosFicha.cadastro?.data_nascimento);
     const dataAdm = parseDate(dadosFicha.cadastro?.data_admissao);
     const idade = calcularIdade(dataNasc, hoje);
-    
+
     const rawSexo = String(dadosFicha.cadastro?.sexo || '').trim().toUpperCase();
     const sexo = (rawSexo === '2' || rawSexo === 'F' || rawSexo.includes('FEM')) ? 'F' : 'M';
 
@@ -115,7 +115,7 @@ function calcularTempos(dadosFicha, checkboxes) {
     const intervalosInc = [];
     const intervalosIncMag = [];
     const incs = dadosFicha.inc_averbacoes || [];
-    
+
     incs.forEach((l, i) => {
         const checkAverb = checkboxes[`inc-${i}-averbado`];
         const checkMag = checkboxes[`inc-${i}-magisterio`];
@@ -142,11 +142,18 @@ function calcularTempos(dadosFicha, checkboxes) {
 
     // 4. EXCLUSÕES
     const intervalosExc = [];
+    let diasExcSemDatas = 0;                          // NOVO
     (dadosFicha.exc_averbacoes || []).forEach((l, i) => {
         if (checkboxes[`exc-${i}`]) {
             const ini = parseDate(l.data_inicio_exclusao);
             const fim = parseDate(l.data_fim_exclusao);
-            if (ini && fim) intervalosExc.push({ inicio: ini, fim });
+            if (ini && fim) {
+                intervalosExc.push({ inicio: ini, fim });
+            } else {
+                // Fallback: SIGRH não manda as datas, mas manda a quantidade de dias
+                const dias = parseInt(l.quantidade_dias_excluidos, 10) || 0;
+                if (dias > 0) diasExcSemDatas += dias;
+            }
         }
     });
 
@@ -173,31 +180,52 @@ function calcularTempos(dadosFicha, checkboxes) {
     // 5.2 CÁLCULO DO TEMPO ESPECIAL (MAGISTÉRIO COM DEDUÇÃO DE EXCLUSÕES)
     const intervalosMagUnificados = unirIntervalos([...intervalosIncMag, ...intervalosLotMag]);
     const totalMagBruto = somarIntervalos(intervalosMagUnificados);
-    
-    const intersecoesMagExc = intersectarIntervalos(intervalosMagUnificados, intervalosExc);
-    const totalMagExc = somarIntervalos(intersecoesMagExc);
-    
-    let tempoMagisterioDias = totalMagBruto - totalMagExc;
+
+    // Deduções aplicáveis ao magistério: exclusões + afastamentos + reversões (unificadas)
+    // (unir primeiro para não deduzir duas vezes caso haja sobreposição)
+    const intervalosDeducaoMag = unirIntervalos([...intervalosExc, ...intervalosAfa, ...intervalosRev]);
+    const intersecoesMag = intersectarIntervalos(intervalosMagUnificados, intervalosDeducaoMag);
+    const totalMagExc = somarIntervalos(intersecoesMag);
+
+    // Exclusões sem datas que incidem sobre averbações marcadas como magistério
+    let diasExcSemDatasMag = 0;
+    if (diasExcSemDatas > 0) {
+        const averbMagSet = new Set();
+        incs.forEach((inc, i) => {
+            if (checkboxes[`inc-${i}-magisterio`]) averbMagSet.add(inc.data_inicio);
+        });
+        (dadosFicha.exc_averbacoes || []).forEach((l, i) => {
+            if (checkboxes[`exc-${i}`]) {
+                const ini = parseDate(l.data_inicio_exclusao);
+                const fim = parseDate(l.data_fim_exclusao);
+                if (!(ini && fim) && averbMagSet.has(l.data_inicio_averbacao)) {
+                    diasExcSemDatasMag += parseInt(l.quantidade_dias_excluidos, 10) || 0;
+                }
+            }
+        });
+    }
+
+    let tempoMagisterioDias = totalMagBruto - totalMagExc - diasExcSemDatasMag;
     if (tempoMagisterioDias < 0) tempoMagisterioDias = 0;
 
     // 6. CÁLCULO DO TEMPO DE CONTRIBUIÇÃO TOTAL
     let temposContrib = [];
     if (dataAdm) temposContrib.push({ inicio: dataAdm, fim: hoje });
     temposContrib = temposContrib.concat(intervalosInc);
-    
+
     const totalPositivo = somarIntervalos(temposContrib);
-    
+
     const intervalosDesconto = unirIntervalos([...intervalosExc, ...intervalosAfa, ...intervalosRev]);
     const totalDesconto = somarIntervalos(intervalosDesconto);
-    
+
     const intersecoes = intersectarIntervalos(intervalosDesconto, intervalosInc);
     const totalIntersecao = somarIntervalos(intersecoes);
 
-    let tempoContribuicaoDias = totalPositivo - totalDesconto + totalIntersecao;
+    let tempoContribuicaoDias = totalPositivo - totalDesconto + totalIntersecao - diasExcSemDatas;
     if (tempoContribuicaoDias < 0) tempoContribuicaoDias = 0;
 
     // 7. TEMPO DE CARREIRA E CARGO
-    const tempoCargoDias = tempoServPubDias; 
+    const tempoCargoDias = tempoServPubDias;
     const tempoCarreiraDias = tempoServPubDias;
 
     // 8. ENQUADRAMENTO NA FUNDAMENTAÇÃO LEGAL
@@ -208,7 +236,7 @@ function calcularTempos(dadosFicha, checkboxes) {
         const pontos = idade + Math.floor(tempoContribuicaoDias / 365);
         const minPontos = sexo === 'F' ? 85 : 95;
         const minContrib = sexo === 'F' ? 30 : 35;
-        
+
         regra = {
             id: 'art3',
             nome: 'Art. 3º EC 47/05 (Transição - Pontos)',
@@ -221,16 +249,16 @@ function calcularTempos(dadosFicha, checkboxes) {
                 { req: 'Cargo (5 anos)', atual: Math.floor(tempoCargoDias / 365), ok: tempoCargoDias >= 5 * 365 }
             ]
         };
-    
+
     } else if (anoAdm <= 2003) {
         const minContrib = sexo === 'F' ? 30 : 35;
         const minIdadeBase = sexo === 'F' ? 55 : 60;
-        
+
         const anosContribuicao = Math.floor(tempoContribuicaoDias / 365);
         const anosExcedentes = Math.max(0, anosContribuicao - minContrib);
         const reducaoIdade = Math.min(anosExcedentes, 5);
         const idadeMinimaReduzida = minIdadeBase - reducaoIdade;
-        
+
         regra = {
             id: 'art6',
             nome: 'Art. 6º EC 41/03 (Transição)',
@@ -243,11 +271,11 @@ function calcularTempos(dadosFicha, checkboxes) {
                 { req: 'Cargo (5 anos)', atual: Math.floor(tempoCargoDias / 365), ok: tempoCargoDias >= 5 * 365 }
             ]
         };
-        
+
         if (tempoMagisterioDias >= (sexo === 'F' ? 25 : 30) * 365) {
             const minIdadeMag = sexo === 'F' ? 50 : 55;
             const idadeMinimaMagReduzida = minIdadeMag - reducaoIdade;
-            
+
             if (idade >= idadeMinimaMagReduzida) {
                 regra.nome = 'Art. 6º EC 41/03 (Especial Magistério)';
                 regra.fundamentacao = 'Art. 6º EC 41/2003, art. 2º EC 47/2005 e art. 40, § 5º, CRFB.';
@@ -257,12 +285,12 @@ function calcularTempos(dadosFicha, checkboxes) {
                 regra.detalhes[1].ok = true;
             }
         }
-    
+
     } else {
         const minIdade = sexo === 'F' ? 55 : 60;
         const minContrib = sexo === 'F' ? 30 : 35;
         const idadeIdadePura = sexo === 'F' ? 60 : 65;
-        
+
         regra = {
             id: 'geral',
             nome: 'Regra Geral (Tempo de Contribuição e Idade)',
@@ -274,7 +302,7 @@ function calcularTempos(dadosFicha, checkboxes) {
                 { req: 'Cargo (5 anos)', atual: Math.floor(tempoCargoDias / 365), ok: tempoCargoDias >= 5 * 365 }
             ]
         };
-        
+
         const temServPubl = tempoServPubDias >= 10 * 365;
         const temCargo = tempoCargoDias >= 5 * 365;
         if (idade >= idadeIdadePura && temServPubl && temCargo) {
@@ -289,7 +317,7 @@ function calcularTempos(dadosFicha, checkboxes) {
                 ]
             };
         }
-        
+
         if (tempoMagisterioDias >= (sexo === 'F' ? 25 : 30) * 365 && idade >= (sexo === 'F' ? 50 : 55)) {
             regra = {
                 id: 'magisterio',
@@ -309,155 +337,115 @@ function calcularTempos(dadosFicha, checkboxes) {
     if (regra) {
         regra.elegivel = regra.detalhes.every(d => d.ok);
     }
-    
-    // ===== CÁLCULO DA DATA DE ELEGIBILIDADE (COM PRECISÃO DIÁRIA SE JÁ ELEGÍVEL) =====
+
+    // ===== CÁLCULO DA DATA DE ELEGIBILIDADE (busca binária, precisão de dia) =====
     let dataElegibilidade = '';
-    if (regra) {
+    if (regra && dataNasc) {
         const hojeZero = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate());
-        const nascZero = dataNasc ? new Date(dataNasc.getFullYear(), dataNasc.getMonth(), dataNasc.getDate()) : null;
-        
-        let dataRef = new Date(hojeZero);
-        let achou = false;
-        
+        const nascZero = new Date(dataNasc.getFullYear(), dataNasc.getMonth(), dataNasc.getDate());
+
+        const isElegivelEm = (dataRef) => {
+            const diasPassados = diffDias(hojeZero, dataRef) - 1;
+            const tcFuturo = tempoContribuicaoDias + diasPassados;
+            const spFuturo = tempoServPubDias + diasPassados;
+            const carreiraFutura = tempoCarreiraDias + diasPassados;
+            const cargoFuturo = tempoCargoDias + diasPassados;
+            const magFuturo = tempoMagisterioDias + (regra.nome.includes('Magistério') ? diasPassados : 0);
+            const idadeFutura = calcularIdade(nascZero, dataRef);
+
+            let okIdade = true, okContrib = true, okSP = true, okCarreira = true, okCargo = true, okMag = true, okPontos = true;
+
+            if (regra.id === 'art3') {
+                const pontosFuturos = idadeFutura + Math.floor(tcFuturo / 365);
+                okPontos = pontosFuturos >= (sexo === 'F' ? 85 : 95);
+                okContrib = tcFuturo >= (sexo === 'F' ? 30 : 35) * 365;
+                okSP = spFuturo >= 25 * 365;
+                okCarreira = carreiraFutura >= 15 * 365;
+                okCargo = cargoFuturo >= 5 * 365;
+            } else if (regra.id === 'art6') {
+                const minContrib = sexo === 'F' ? 30 : 35;
+                const minIdadeBase = regra.nome.includes('Magistério') ? (sexo === 'F' ? 50 : 55) : (sexo === 'F' ? 55 : 60);
+                const minMag = sexo === 'F' ? 25 : 30;
+                const anosContrib = Math.floor(tcFuturo / 365);
+                const anosExcedentes = Math.max(0, anosContrib - minContrib);
+                const reducaoIdade = Math.min(anosExcedentes, 5);
+                const idadeMinima = minIdadeBase - reducaoIdade;
+                okIdade = idadeFutura >= idadeMinima;
+                okContrib = tcFuturo >= minContrib * 365;
+                okSP = spFuturo >= 20 * 365;
+                okCarreira = carreiraFutura >= 10 * 365;
+                okCargo = cargoFuturo >= 5 * 365;
+                okMag = regra.nome.includes('Magistério') ? (magFuturo >= minMag * 365) : true;
+            } else if (regra.id === 'geral') {
+                okIdade = idadeFutura >= (sexo === 'F' ? 55 : 60);
+                okContrib = tcFuturo >= (sexo === 'F' ? 30 : 35) * 365;
+                okSP = spFuturo >= 10 * 365;
+                okCargo = cargoFuturo >= 5 * 365;
+            } else if (regra.id === 'geral_idade') {
+                okIdade = idadeFutura >= (sexo === 'F' ? 60 : 65);
+                okSP = spFuturo >= 10 * 365;
+                okCargo = cargoFuturo >= 5 * 365;
+            } else if (regra.id === 'magisterio') {
+                okIdade = idadeFutura >= (sexo === 'F' ? 50 : 55);
+                okMag = magFuturo >= (sexo === 'F' ? 25 : 30) * 365;
+                okSP = spFuturo >= 10 * 365;
+                okCargo = cargoFuturo >= 5 * 365;
+            }
+
+            return okIdade && okContrib && okSP && okCarreira && okCargo && okMag && okPontos;
+        };
+
+        const MAX_DIAS = 365 * 50;
+        const addDays = (d, n) => { const x = new Date(d); x.setDate(x.getDate() + n); return x; };
+        const fmtBR = (d) =>
+            `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
+
         if (regra.elegivel) {
-            // Se já é elegível, voltamos DIA A DIA para achar o marco exato sem erro de arredondamento de mês
-            for (let i = 0; i < 18250; i++) {
-                if (i > 0) dataRef.setDate(dataRef.getDate() - 1);
-                
-                const diasPassados = diffDias(hojeZero, dataRef) - 1;
-                const tcFuturo = tempoContribuicaoDias + diasPassados;
-                const spFuturo = tempoServPubDias + diasPassados;
-                const carreiraFutura = tempoCarreiraDias + diasPassados;
-                const cargoFuturo = tempoCargoDias + diasPassados;
-                const magFuturo = tempoMagisterioDias + (regra.nome.includes('Magistério') ? diasPassados : 0);
-                const idadeFutura = calcularIdade(nascZero, dataRef);
-                
-                let okIdade = true, okContrib = true, okSP = true, okCarreira = true, okCargo = true, okMag = true, okPontos = true;
-                
-                if (regra.id === 'art3') {
-                    const pontosFuturos = idadeFutura + Math.floor(tcFuturo / 365);
-                    okPontos = pontosFuturos >= (sexo === 'F' ? 85 : 95);
-                    okContrib = tcFuturo >= (sexo === 'F' ? 30 : 35) * 365;
-                    okSP = spFuturo >= 25 * 365;
-                    okCarreira = carreiraFutura >= 15 * 365;
-                    okCargo = cargoFuturo >= 5 * 365;
-                } else if (regra.id === 'art6') {
-                    const minContrib = sexo === 'F' ? 30 : 35;
-                    const minIdadeBase = regra.nome.includes('Magistério') ? (sexo === 'F' ? 50 : 55) : (sexo === 'F' ? 55 : 60);
-                    const minMag = sexo === 'F' ? 25 : 30;
-                    const anosContrib = Math.floor(tcFuturo / 365);
-                    const anosExcedentes = Math.max(0, anosContrib - minContrib);
-                    const reducaoIdade = Math.min(anosExcedentes, 5);
-                    const idadeMinima = minIdadeBase - reducaoIdade;
-                    okIdade = idadeFutura >= idadeMinima;
-                    okContrib = tcFuturo >= minContrib * 365;
-                    okSP = spFuturo >= 20 * 365;
-                    okCarreira = carreiraFutura >= 10 * 365;
-                    okCargo = cargoFuturo >= 5 * 365;
-                    okMag = regra.nome.includes('Magistério') ? (magFuturo >= minMag * 365) : true;
-                } else if (regra.id === 'geral') {
-                    okIdade = idadeFutura >= (sexo === 'F' ? 55 : 60);
-                    okContrib = tcFuturo >= (sexo === 'F' ? 30 : 35) * 365;
-                    okSP = spFuturo >= 10 * 365;
-                    okCargo = cargoFuturo >= 5 * 365;
-                } else if (regra.id === 'geral_idade') {
-                    okIdade = idadeFutura >= (sexo === 'F' ? 60 : 65);
-                    okSP = spFuturo >= 10 * 365;
-                    okCargo = cargoFuturo >= 5 * 365;
-                } else if (regra.id === 'magisterio') {
-                    okIdade = idadeFutura >= (sexo === 'F' ? 50 : 55);
-                    okMag = magFuturo >= (sexo === 'F' ? 25 : 30) * 365;
-                    okSP = spFuturo >= 10 * 365;
-                    okCargo = cargoFuturo >= 5 * 365;
+            // Já é elegível → busca retroativa o dia exato em que se tornou elegível
+            const passadoMax = addDays(hojeZero, -MAX_DIAS);
+            let diasResult;
+            if (isElegivelEm(passadoMax)) {
+                diasResult = -MAX_DIAS;   // Elegível há mais de 50 anos (raro)
+            } else {
+                let lo = -MAX_DIAS, hi = 0;   // lo = inelegível, hi = elegível
+                while (lo < hi - 1) {
+                    const mid = Math.floor((lo + hi) / 2);
+                    if (isElegivelEm(addDays(hojeZero, mid))) hi = mid;
+                    else lo = mid;
                 }
-                
-                const isElegivelNoDia = okIdade && okContrib && okSP && okCarreira && okCargo && okMag && okPontos;
-                if (!isElegivelNoDia) {
-                    dataRef.setDate(dataRef.getDate() + 1);
-                    dataElegibilidade = `${String(dataRef.getDate()).padStart(2, '0')}/${String(dataRef.getMonth() + 1).padStart(2, '0')}/${dataRef.getFullYear()}`;
-                    achou = true;
-                    break;
-                }
+                diasResult = hi;
             }
+            dataElegibilidade = fmtBR(addDays(hojeZero, diasResult));
         } else {
-            // Se não é elegível, mantém exatamente a projeção futura por mês do código original
-            for (let i = 0; i < 480; i++) {
-                if (i > 0) dataRef.setMonth(dataRef.getMonth() + 1);
-                
-                const diasPassados = diffDias(hojeZero, dataRef) - 1;
-                const tcFuturo = tempoContribuicaoDias + diasPassados;
-                const spFuturo = tempoServPubDias + diasPassados;
-                const carreiraFutura = tempoCarreiraDias + diasPassados;
-                const cargoFuturo = tempoCargoDias + diasPassados;
-                const magFuturo = tempoMagisterioDias + (regra.nome.includes('Magistério') ? diasPassados : 0);
-                const idadeFutura = calcularIdade(nascZero, dataRef);
-                
-                let okIdade = true, okContrib = true, okSP = true, okCarreira = true, okCargo = true, okMag = true, okPontos = true;
-                
-                if (regra.id === 'art3') {
-                    const pontosFuturos = idadeFutura + Math.floor(tcFuturo / 365);
-                    okPontos = pontosFuturos >= (sexo === 'F' ? 85 : 95);
-                    okContrib = tcFuturo >= (sexo === 'F' ? 30 : 35) * 365;
-                    okSP = spFuturo >= 25 * 365;
-                    okCarreira = carreiraFutura >= 15 * 365;
-                    okCargo = cargoFuturo >= 5 * 365;
-                } else if (regra.id === 'art6') {
-                    const minContrib = sexo === 'F' ? 30 : 35;
-                    const minIdadeBase = regra.nome.includes('Magistério') ? (sexo === 'F' ? 50 : 55) : (sexo === 'F' ? 55 : 60);
-                    const minMag = sexo === 'F' ? 25 : 30;
-                    const anosContrib = Math.floor(tcFuturo / 365);
-                    const anosExcedentes = Math.max(0, anosContrib - minContrib);
-                    const reducaoIdade = Math.min(anosExcedentes, 5);
-                    const idadeMinima = minIdadeBase - reducaoIdade;
-                    okIdade = idadeFutura >= idadeMinima;
-                    okContrib = tcFuturo >= minContrib * 365;
-                    okSP = spFuturo >= 20 * 365;
-                    okCarreira = carreiraFutura >= 10 * 365;
-                    okCargo = cargoFuturo >= 5 * 365;
-                    okMag = regra.nome.includes('Magistério') ? (magFuturo >= minMag * 365) : true;
-                } else if (regra.id === 'geral') {
-                    okIdade = idadeFutura >= (sexo === 'F' ? 55 : 60);
-                    okContrib = tcFuturo >= (sexo === 'F' ? 30 : 35) * 365;
-                    okSP = spFuturo >= 10 * 365;
-                    okCargo = cargoFuturo >= 5 * 365;
-                } else if (regra.id === 'geral_idade') {
-                    okIdade = idadeFutura >= (sexo === 'F' ? 60 : 65);
-                    okSP = spFuturo >= 10 * 365;
-                    okCargo = cargoFuturo >= 5 * 365;
-                } else if (regra.id === 'magisterio') {
-                    okIdade = idadeFutura >= (sexo === 'F' ? 50 : 55);
-                    okMag = magFuturo >= (sexo === 'F' ? 25 : 30) * 365;
-                    okSP = spFuturo >= 10 * 365;
-                    okCargo = cargoFuturo >= 5 * 365;
+            // Ainda não elegível → busca binária o primeiro dia elegível no futuro
+            const futuroMax = addDays(hojeZero, MAX_DIAS);
+            if (!isElegivelEm(futuroMax)) {
+                dataElegibilidade = 'Não calculada';
+            } else {
+                let lo = 0, hi = MAX_DIAS;
+                while (lo < hi - 1) {
+                    const mid = Math.floor((lo + hi) / 2);
+                    if (isElegivelEm(addDays(hojeZero, mid))) hi = mid;
+                    else lo = mid;
                 }
-                
-                const isElegivelNoMes = okIdade && okContrib && okSP && okCarreira && okCargo && okMag && okPontos;
-                if (isElegivelNoMes) {
-                    dataElegibilidade = `${String(dataRef.getDate()).padStart(2, '0')}/${String(dataRef.getMonth() + 1).padStart(2, '0')}/${dataRef.getFullYear()}`;
-                    achou = true;
-                    break;
-                }
+                dataElegibilidade = fmtBR(addDays(hojeZero, hi));
             }
-        }
-        
-        if (!achou) {
-            dataElegibilidade = regra.elegivel ? 'Data anterior não encontrada' : 'Não calculada';
         }
     }
 
     // 10. RETORNO DE TUDO PRONTO PARA A TELA
     return {
-        idade, 
-        sexo, 
-        tempoContribuicaoDias, 
+        idade,
+        sexo,
+        tempoContribuicaoDias,
         dataElegibilidade,
         tempoContribuicaoAMD: diasParaAMD(tempoContribuicaoDias),
-        tempoServPubDias, 
+        tempoServPubDias,
         tempoServPubAMD: diasParaAMD(tempoServPubDias),
-        tempoMagisterioDias, 
+        tempoMagisterioDias,
         tempoMagisterioAMD: diasParaAMD(tempoMagisterioDias),
-        tempoCarreiraDias, 
-        tempoCargoDias, 
+        tempoCarreiraDias,
+        tempoCargoDias,
         regra
     };
 }

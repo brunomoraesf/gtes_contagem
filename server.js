@@ -4,7 +4,8 @@ const path = require('path');
 const fs = require('fs');
 const {
   setCancelRequested, getCancelRequested, log,
-  normalizarMatricula, fecharTodosBrowsers, garantirChromium
+  normalizarMatricula, fecharTodosBrowsers, garantirChromium,
+  setShowBrowser, getShowBrowser
 } = require('./utils/helpers');
 
 // IMPORTS DOS ROBÔS REAIS
@@ -140,6 +141,7 @@ app.post('/executar', async (req, res) => {
   if (!lista.length) return res.status(400).json({ erro: 'Nenhum robô selecionado.' });
 
   setCancel(false);
+  setShowBrowser(false);          // ← NOVO: força headless no início
   await fecharTodosBrowsers();
 
   executandoNoServidor = true;
@@ -273,6 +275,7 @@ app.post('/executar-robo', async (req, res) => {
   }
 
   setCancel(false);
+  setShowBrowser(false);          // ← NOVO: força headless no início
   await fecharTodosBrowsers();
   executandoNoServidor = true;
 
@@ -392,6 +395,21 @@ app.post('/carregar', (req, res) => {
     status,
     exibivel: json.completo === true
   });
+});
+
+// ===== CONFIGURAÇÕES DO SERVIDOR =====
+app.get('/config', (req, res) => {
+  res.json({ showBrowser: getShowBrowser() });
+});
+
+app.post('/config', (req, res) => {
+  const { showBrowser } = req.body || {};
+  if (typeof showBrowser !== 'boolean') {
+    return res.status(400).json({ erro: 'showBrowser deve ser booleano.' });
+  }
+  setShowBrowser(showBrowser);
+  log(`[CONFIG] Visualização do navegador: ${showBrowser ? 'LIGADA (visível)' : 'DESLIGADA (headless)'}`);
+  res.json({ sucesso: true, showBrowser });
 });
 
 app.post('/cancelar', async (_req, res) => {
